@@ -1,0 +1,393 @@
+"""Musubi CLI entry point.
+
+Subcommands
+-----------
+  musubi stats                     print graph summary
+  musubi neighbors <query>         show graph neighbors of a doc
+  musubi cold [--limit N]          list isolated / stale docs
+  musubi search <query>            hybrid qmd-keyword + graph-expand search
+  musubi path <query>              resolve a query to node id + path (debug)
+  musubi build                     rebuild the graph from the qmd index
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from collections import Counter, defaultdict
+from datetime import datetime, timezone
+from typing import Any
+
+from musubi import __version__
+from musubi.config import Config, load_config
+from musubi.graph import Graph
+
+ANSI = {
+    "reset": "\033[0m",
+    "dim": "\033[2m",
+    "bold": "\033[1m",
+    "cyan": "\033[36m",
+    "yellow": "\033[33m",
+    "green": "\033[32m",
+    "red": "\033[31m",
+    "magenta": "\033[35m",
+}
+USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+
+def c(text: str, color: str) -> str:
+    if not USE_COLOR:
+        return text
+    return f"{ANSI[color]}{text}{ANSI['reset']}"
+
+
+def _node_label(node: dict[str, Any]) -> str:
+    coll = node.get("collection", "?")
+    title = node.get("title", "?")
+    path = node.get("path", "?")
+    return f"[{coll}] {title}  {c(path, 'dim')}"
+
+
+def _load_graph_or_exit(cfg: Config) -> Graph:
+    try:
+        return Graph.load(cfg.graph_path)
+    except FileNotFoundError as e:
+        print(c(str(e), "red"), file=sys.stderr)
+        sys.exit(1)
+
+
+# ---------- commands ----------
+
+
+def cmd_stats(args: argparse.Namespace, cfg: Config) -> int:
+    g = _load_graph_or_exit(cfg)
+
+    coll_counts: dict[str, int] = defaultdict(int)
+    concept_counter: Counter[str] = Counter()
+    etype_counter: Counter[str] = Counter()
+    for n in g.nodes:
+        coll_counts[n.get("collection", "?")] += 1
+        for con in n.get("concepts", []):
+            concept_counter[con] += 1
+    for e in g.edges:
+        etype_counter[e.get("edge_type", "?")] += 1
+
+    degree_sum = sum(g.degree.values())
+    iso = sum(1 for nid in g.id_to_node if g.deg(nid) == 0)
+    avg_deg = degree_sum / max(len(g.nodes), 1)
+    hub_id = max(g.id_to_node, key=lambda nid: g.deg(nid)) if g.id_to_node else None
+
+    print(c("◇ Musubi — Graph Stats", "cyan"))
+    print()
+    print(f"  version:   {__version__}")
+    print(f"  nodes:     {len(g.nodes)}")
+    print(f"  edges:     {len(g.edges)}")
+    for et, cnt in sorted(etype_counter.items()):
+        print(f"    · {et}: {cnt}")
+    print(f"  isolated:  {iso} ({100 * iso / max(len(g.nodes), 1):.1f}%)")
+    print(f"  avg deg:   {avg_deg:.1f}")
+    if hub_id is not None:
+        hub = g.id_to_node[hub_id]
+        print(f"  hub node:  deg={g.deg(hub_id)}  {_node_label(hub)}")
+    print()
+    print(c("  collections:", "dim"))
+    for coll, cnt in sorted(coll_counts.items(), key=lambda x: -x[1]):
+        print(f"    {coll:<18} {cnt}")
+    print()
+    print(c("  top concepts:", "dim"))
+    for con, cnt in concept_counter.most_common(15):
+        print(f"    {con:<25} {cnt} docs")
+
+    if cfg.graph_path.exists():
+        mtime = datetime.fromtimestamp(cfg.graph_path.stat().st_mtime, tz=timezone.utc)
+        age_h = (datetime.now(timezone.utc) - mtime).total_seconds() / 3600
+        print()
+        print(
+            c(
+                f"  graph file: {cfg.graph_path.name} "
+                f"({age_h:.1f}h old, {mtime:%Y-%m-%d %H:%M UTC})",
+                "dim",
+            )
+        )
+    return 0
+
+
+def cmd_neighbors(args: argparse.Namespace, cfg: Config) -> int:
+    g = _load_graph_or_exit(cfg)
+    matches = g.resolve(args.query)
+    if not matches:
+        print(c(f"No doc matched: {args.query}", "red"), file=sys.stderr)
+        return 1
+    if len(matches) > 1 and not args.all:
+        print(
+            c(
+                f"{len(matches)} docs matched. Showing neighbors for first; "
+                f"pass --all to show all matches.",
+                "yellow",
+            ),
+            file=sys.stderr,
+        )
+        for nid in matches[:5]:
+            print(
+                c(f"  · {nid}  {_node_label(g.id_to_node[nid])}", "dim"),
+                file=sys.stderr,
+            )
+        matches = matches[:1]
+
+    for source_id in matches:
+        source = g.id_to_node[source_id]
+        print()
+        print(c(f"◇ {_node_label(source)}", "cyan"))
+        print(
+            c(
+                f"  id={source_id}  degree={g.deg(source_id)}  "
+                f"concepts={source.get('concept_count', 0)}",
+                "dim",
+            )
+        )
+
+        nbrs = g.neighbors_of(source_id, limit=args.limit)
+        if not nbrs:
+            print(c("  (no neighbors — isolated node)", "yellow"))
+            continue
+
+        for e in nbrs:
+            nid = e["id"]
+            n = g.id_to_node.get(nid, {})
+            w = e.get("weight", 0)
+            etype = e.get("edge_type", "?")
+            shared = ", ".join(e.get("shared_concepts", [])[:4]) or "—"
+            marker = "⚡" if etype == "embedding" else "·"
+            print(f"  {marker} w={w:<4} {_node_label(n)}")
+            print(f"      {c('shared:', 'dim')} {shared}")
+    return 0
+
+
+def cmd_cold(args: argparse.Namespace, cfg: Config) -> int:
+    g = _load_graph_or_exit(cfg)
+    now = datetime.now(timezone.utc)
+
+    scored: list[tuple[float, Any, dict[str, Any], int, int]] = []
+    for nid, node in g.id_to_node.items():
+        deg = g.deg(nid)
+        cc = node.get("concept_count", 0)
+
+        days = 9999
+        m = node.get("modified_at")
+        if m:
+            try:
+                dt = datetime.fromisoformat(m.replace("Z", "+00:00"))
+                days = max(0, (now - dt).days)
+            except (ValueError, AttributeError):
+                pass
+
+        deg_score = 1.0 / (deg + 1)
+        cc_score = 1.0 / (cc + 1)
+        stale_score = min(days / 180, 1.0)
+        cold_score = deg_score * 0.5 + cc_score * 0.2 + stale_score * 0.3
+
+        scored.append((cold_score, nid, node, deg, days))
+
+    scored.sort(reverse=True)
+
+    print(c(f"◇ Cold nodes (top {args.limit})", "cyan"))
+    print(c("  score = 0.5·(1/deg) + 0.2·(1/concepts) + 0.3·(days/180)", "dim"))
+    print()
+    print(f"  {'score':<7} {'deg':<5} {'days':<6} label")
+    for score, nid, node, deg, days in scored[: args.limit]:
+        marker = c("❄", "cyan") if deg == 0 else " "
+        print(f"  {score:<7.3f} {deg:<5} {days:<6} {marker} {_node_label(node)}")
+
+    iso_count = sum(1 for _, _, _, d, _ in scored if d == 0)
+    print()
+    print(
+        c(
+            f"  isolated (degree=0): {iso_count} / {len(scored)} total docs",
+            "dim",
+        )
+    )
+    return 0
+
+
+def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
+    g = _load_graph_or_exit(cfg)
+
+    try:
+        result = subprocess.run(
+            [cfg.qmd_bin, "search", args.query, "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except FileNotFoundError:
+        print(
+            c(
+                f"qmd binary '{cfg.qmd_bin}' not found. "
+                f"Set MUSUBI_QMD_BIN or install @tobilu/qmd.",
+                "red",
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    except subprocess.TimeoutExpired:
+        print(c("qmd search timed out", "red"), file=sys.stderr)
+        return 1
+
+    if result.returncode != 0:
+        print(
+            c(f"qmd search failed (exit {result.returncode})", "red"),
+            file=sys.stderr,
+        )
+        print(result.stderr, file=sys.stderr)
+        return 1
+
+    try:
+        hits = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        print(
+            c("qmd did not return JSON. Raw output:", "yellow"),
+            file=sys.stderr,
+        )
+        print(result.stdout)
+        return 0
+
+    if not isinstance(hits, list):
+        hits = hits.get("results", []) if isinstance(hits, dict) else []
+
+    base_ids: list[tuple[Any, float]] = []
+    for rank, hit in enumerate(hits[: args.limit]):
+        file_field = hit.get("file") or hit.get("path") or ""
+        nid = Graph.match_qmd_uri(file_field, g.path_to_id)
+        if nid is None:
+            continue
+        base_ids.append((nid, 1.0 / (rank + 1)))
+
+    expanded: dict[Any, float] = {}
+    for nid, base in base_ids:
+        expanded[nid] = expanded.get(nid, 0.0) + base
+        for nbr in g.neighbors_of(nid, limit=2):
+            nbr_id = nbr["id"]
+            boost = base * 0.3 * (nbr.get("weight", 1) / 10)
+            expanded[nbr_id] = expanded.get(nbr_id, 0.0) + boost
+
+    if not expanded:
+        print(
+            c(
+                "Graph expansion found no matches. Raw qmd results (first 5):",
+                "yellow",
+            )
+        )
+        print(json.dumps(hits[:5], indent=2, ensure_ascii=False))
+        return 0
+
+    ranked = sorted(expanded.items(), key=lambda kv: kv[1], reverse=True)[: args.limit]
+
+    print(c(f"◇ Musubi search: {args.query}", "cyan"))
+    print()
+    base_set = {nid for nid, _ in base_ids}
+    for nid, score in ranked:
+        n = g.id_to_node.get(nid, {})
+        marker = c("★", "yellow") if nid in base_set else c("+", "green")
+        print(f"  {marker} {score:.3f}  {_node_label(n)}")
+    print()
+    print(c("  ★ = direct hit    + = graph neighbor boost", "dim"))
+    return 0
+
+
+def cmd_path(args: argparse.Namespace, cfg: Config) -> int:
+    g = _load_graph_or_exit(cfg)
+    matches = g.resolve(args.query)
+    if not matches:
+        print(c(f"No doc matched: {args.query}", "red"), file=sys.stderr)
+        return 1
+    for nid in matches:
+        n = g.id_to_node[nid]
+        print(f"{nid}\t{n.get('collection', '?')}\t{n.get('path', '?')}")
+    return 0
+
+
+def cmd_build(args: argparse.Namespace, cfg: Config) -> int:
+    from musubi import builder  # lazy — this is the heavy import path
+
+    started = datetime.now(timezone.utc)
+    log_path = cfg.log_dir / "build.log"
+    cfg.ensure_dirs()
+
+    print(c(f"◇ Building musubi graph...", "cyan"))
+    print(c(f"  qmd index: {cfg.qmd_db}", "dim"))
+    print(c(f"  output:    {cfg.graph_path}", "dim"))
+    if cfg.concepts_file:
+        print(c(f"  concepts:  default + {cfg.concepts_file}", "dim"))
+    else:
+        print(c("  concepts:  default only (no user extension)", "dim"))
+
+    try:
+        summary = builder.build(cfg, verbose=True)
+    except FileNotFoundError as e:
+        print(c(str(e), "red"), file=sys.stderr)
+        return 2
+    except Exception as e:
+        print(c(f"build failed: {type(e).__name__}: {e}", "red"), file=sys.stderr)
+        return 2
+
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    print(c(f"  ✓ done in {elapsed:.1f}s", "green"))
+
+    with log_path.open("a") as log:
+        log.write(f"{started.isoformat()} {json.dumps(summary)} {elapsed:.1f}s\n")
+    return 0
+
+
+# ---------- argparse ----------
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(
+        prog="musubi",
+        description=(
+            "Musubi (結び) — a knowledge-graph companion for flat-file markdown "
+            "note systems. Ties your notes together."
+        ),
+    )
+    p.add_argument("--version", action="version", version=f"musubi {__version__}")
+
+    sub = p.add_subparsers(dest="command")
+
+    ps = sub.add_parser("stats", help="graph metrics summary")
+    ps.set_defaults(func=cmd_stats)
+
+    pn = sub.add_parser("neighbors", help="list graph neighbors of a doc")
+    pn.add_argument("query", help="doc id, path, or title substring")
+    pn.add_argument("--limit", type=int, default=8)
+    pn.add_argument("--all", action="store_true", help="if ambiguous, show all matches")
+    pn.set_defaults(func=cmd_neighbors)
+
+    pc = sub.add_parser("cold", help="list cold/isolated docs")
+    pc.add_argument("--limit", type=int, default=15)
+    pc.set_defaults(func=cmd_cold)
+
+    psearch = sub.add_parser("search", help="hybrid qmd keyword + graph search")
+    psearch.add_argument("query")
+    psearch.add_argument("--limit", type=int, default=10)
+    psearch.set_defaults(func=cmd_search)
+
+    pp = sub.add_parser("path", help="resolve query to node id + path (debug)")
+    pp.add_argument("query")
+    pp.set_defaults(func=cmd_path)
+
+    pb = sub.add_parser("build", help="rebuild graph from the qmd sqlite index")
+    pb.set_defaults(func=cmd_build)
+
+    args = p.parse_args(argv)
+    if not getattr(args, "command", None):
+        p.print_help()
+        return 1
+
+    cfg = load_config()
+    return args.func(args, cfg)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
