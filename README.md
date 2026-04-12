@@ -2,18 +2,22 @@
 
 **Tie your markdown notes together — without leaving markdown.**
 
+<p align="center">
+  <img src="assets/demo-graph.png" alt="Musubi demo knowledge graph" width="100%">
+</p>
+
 ```bash
-$ musubi neighbors "fp8-kvcache-repetition"
+$ musubi neighbors "vllm"
 
-◇ [infra] FP8 KV Cache Causes Infinite Repetition
-  id=4821  degree=38  concepts=18
+◇ [inference] Ollama vs vLLM: Same Model, 30% Speed Gap on GPU
+  id=12  degree=5  concepts=15
 
-  · w=12  [infra] SM121 NVFP4 vLLM Garbage Output — Root Cause & Fix
-      shared: vllm, quantization, kv cache, gpu
-  · w=10  [infra] Gemma 4 26B-A4B NVFP4 on GX10 — vLLM 0.19
-      shared: vllm, quantization, dgx spark, inference
-  · w=8   [infra] vLLM FP8 KV Cache Upgrade — bf16 Fix
-      shared: vllm, kv cache, fp8, gpu
+  · w=7   [inference] Quantization Format Cheat Sheet: FP8, NVFP4, GGUF, AWQ, GPTQ
+      shared: gotcha, gpu, vllm, inference
+  · w=5   [devops] Docker GPU OOM: Why Your Container Crashes After 2 Hours
+      shared: gpu, vram, vllm, inference
+  · w=3   [inference] MoE vs Dense: Why Bandwidth Decides Everything
+      shared: gpu, tok/s, throughput
 ```
 
 You wrote a debugging note about FP8 KV cache six weeks ago. Today
@@ -58,25 +62,26 @@ can delete and rebuild anytime. Zero lock-in.
 
 ---
 
-## Numbers (real-world, not synthetic)
+## Numbers
 
-Built from a personal knowledge base of developer notes, experience
-files, and technical blog articles:
+The included demo notes (20 docs across 5 domains) build instantly.
+Real-world corpora of 400+ docs build in under 30 seconds:
 
-| Metric | Value |
-|--------|-------|
-| Documents | 399 |
-| Concept edges | 13,915 |
-| Embedding fallback edges | 131 |
-| Isolated nodes | 0 (0.0%) |
-| Build time | 24 seconds (M-series Mac) |
-| Graph file size | ~1 MB |
-| Read-side query time | < 200ms |
-| Concept dictionary | 180+ built-in terms, user-extensible |
+| Metric | Demo (20 docs) | Production (400 docs) |
+|--------|---------------|----------------------|
+| Concept edges | 17 | 13,915 |
+| Isolated nodes | 7 (35%) | 0 (0%) |
+| Build time | 0.7s | 24s |
+| Graph file size | 8 KB | 1 MB |
+| Read-side query | < 100ms | < 200ms |
 
-The default concept dictionary covers LLM inference, web development,
-DevOps, and AI tooling. You add your own domain vocabulary in a plain
-text file.
+The 35% isolation rate in the demo drops to 0% in production because
+larger corpora have more concept overlap — and with qmd mode, the
+embedding fallback catches the rest.
+
+The default concept dictionary ships 180+ generic tech terms. You add
+your own domain vocabulary in a plain text file (see
+[Customizing concepts](#customizing-concepts)).
 
 ---
 
@@ -127,21 +132,45 @@ musubi cold --limit 20               # what's gone stale?
 ◇ Musubi — Graph Stats
 
   version:   0.1.0
-  nodes:     399
-  edges:     14046
-    · concept: 13915
-    · embedding: 131
-  isolated:  0 (0.0%)
-  avg deg:   70.4
-  hub node:  deg=224  [bpstracker-web] Blog SEO + Charts session
+  nodes:     20
+  edges:     17
+    · concept: 17
+  isolated:  7 (35.0%)
+  avg deg:   1.7
+  hub node:  deg=5  [inference] Ollama vs vLLM: Same Model, 30% Speed Gap on GPU
+
+  collections:
+    inference          5
+    agents             4
+    devops             4
+    webdev             4
+    general            3
 
   top concepts:
-    api                       172 docs
-    agent                     89 docs
-    session                   82 docs
-    bps                       73 docs
-    security                  59 docs
+    vllm                      5 docs
+    agent                     4 docs
+    inference                 4 docs
+    gpu                       4 docs
+    git                       4 docs
 ```
+
+### Example output: `musubi neighbors`
+
+```
+◇ [inference] Ollama vs vLLM: Same Model, 30% Speed Gap on GPU
+  id=12  degree=5  concepts=15
+
+  · w=7   [inference] Quantization Format Cheat Sheet: FP8, NVFP4, GGUF, AWQ, GPTQ
+      shared: gotcha, gpu, vllm, inference
+  · w=5   [devops] Docker GPU OOM: Why Your Container Crashes After 2 Hours
+      shared: gpu, vram, vllm, inference
+  · w=3   [inference] MoE vs Dense: Why Bandwidth Decides Everything
+      shared: gpu, tok/s, throughput
+```
+
+Notice how **Docker GPU OOM** (a devops note) surfaces as a neighbor of
+a benchmark note — they share `gpu`, `vram`, `vllm`, and `inference`.
+Keyword search for "benchmark" would never return a devops debugging note.
 
 ### Example output: `musubi cold`
 
@@ -150,26 +179,16 @@ musubi cold --limit 20               # what's gone stale?
   score = 0.5·(1/deg) + 0.2·(1/concepts) + 0.3·(days/180)
 
   score   deg   days   label
-  0.458   3     80     ❄ [book-podcast] courage
-  0.455   3     78       [book-podcast] lychee
-  0.433   3     65       [claude-code] Development Context
+  0.567   0     0      ❄ [webdev] React Server Components: Three Gotchas
+  0.567   0     0      ❄ [devops] PostgreSQL Autovacuum Deadlock
+  0.550   0     0      ❄ [agents] Tool Calling Patterns: When the Model Gets It Wrong
+  0.540   0     0      ❄ [agents] Agent Memory: File-Based vs Database-Backed
+  0.525   0     0      ❄ [webdev] Next.js i18n: hreflang x-default Splits Rankings
 ```
 
-### Example output: `musubi search`
-
-```
-◇ Musubi search: gemma4 nvfp4
-
-  ★ 1.000  [infra] Gemma 4 26B-A4B NVFP4 on GX10
-  + 0.690  [infra] SM121 NVFP4 vLLM Garbage Output — Root Cause
-  + 0.660  [infra] SM121 cuBLASLt → CUTLASS Migration
-
-  ★ = direct hit    + = graph neighbor boost
-```
-
-The `+` results are notes that **keyword search alone would never
-return** — they don't contain the search terms, but they're graph
-neighbors of the direct hits.
+The ❄ marker flags isolated nodes (degree = 0). These docs don't share
+enough concepts with anything else — either they need richer vocabulary,
+or they're genuinely standalone topics.
 
 ---
 
@@ -272,6 +291,26 @@ defaults mean you don't need to set anything:
 | `MUSUBI_QMD_BIN` | `qmd` on PATH | qmd CLI binary |
 | `MUSUBI_CONCEPTS_FILE` | `$XDG_CONFIG_HOME/musubi/concepts.txt` | Custom concept list |
 | `MUSUBI_LOG_DIR` | `$XDG_STATE_HOME/musubi/` | Build logs |
+
+---
+
+## Try it yourself
+
+The repo includes 20 demo notes across 5 domains (LLM inference,
+web dev, DevOps, AI agents, general). Build and explore in 30 seconds:
+
+```bash
+git clone https://github.com/coolthor/musubi.git
+cd musubi
+uv tool install .
+musubi build --source examples/demo-notes/
+musubi stats
+musubi neighbors "vllm"
+musubi cold
+```
+
+The [interactive graph visualization](assets/demo-graph.html) can be
+opened in any browser after building.
 
 ---
 

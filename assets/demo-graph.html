@@ -1,0 +1,410 @@
+<html>
+    <head><style>*{box-sizing:border-box}html,body{margin:0;padding:0;background:#0a0a0f!important;overflow:hidden}div[style*=border]{border-color:#1e1e2e!important;background:#0a0a0f!important}#mynetwork,.vis-network,canvas{background:#0a0a0f!important}</style>
+        <meta charset="utf-8">
+        
+            <script>function neighbourhoodHighlight(params) {
+  // console.log("in nieghbourhoodhighlight");
+  allNodes = nodes.get({ returnType: "Object" });
+  // originalNodes = JSON.parse(JSON.stringify(allNodes));
+  // if something is selected:
+  if (params.nodes.length > 0) {
+    highlightActive = true;
+    var i, j;
+    var selectedNode = params.nodes[0];
+    var degrees = 2;
+
+    // mark all nodes as hard to read.
+    for (let nodeId in allNodes) {
+      // nodeColors[nodeId] = allNodes[nodeId].color;
+      allNodes[nodeId].color = "rgba(200,200,200,0.5)";
+      if (allNodes[nodeId].hiddenLabel === undefined) {
+        allNodes[nodeId].hiddenLabel = allNodes[nodeId].label;
+        allNodes[nodeId].label = undefined;
+      }
+    }
+    var connectedNodes = network.getConnectedNodes(selectedNode);
+    var allConnectedNodes = [];
+
+    // get the second degree nodes
+    for (i = 1; i < degrees; i++) {
+      for (j = 0; j < connectedNodes.length; j++) {
+        allConnectedNodes = allConnectedNodes.concat(
+          network.getConnectedNodes(connectedNodes[j])
+        );
+      }
+    }
+
+    // all second degree nodes get a different color and their label back
+    for (i = 0; i < allConnectedNodes.length; i++) {
+      // allNodes[allConnectedNodes[i]].color = "pink";
+      allNodes[allConnectedNodes[i]].color = "rgba(150,150,150,0.75)";
+      if (allNodes[allConnectedNodes[i]].hiddenLabel !== undefined) {
+        allNodes[allConnectedNodes[i]].label =
+          allNodes[allConnectedNodes[i]].hiddenLabel;
+        allNodes[allConnectedNodes[i]].hiddenLabel = undefined;
+      }
+    }
+
+    // all first degree nodes get their own color and their label back
+    for (i = 0; i < connectedNodes.length; i++) {
+      // allNodes[connectedNodes[i]].color = undefined;
+      allNodes[connectedNodes[i]].color = nodeColors[connectedNodes[i]];
+      if (allNodes[connectedNodes[i]].hiddenLabel !== undefined) {
+        allNodes[connectedNodes[i]].label =
+          allNodes[connectedNodes[i]].hiddenLabel;
+        allNodes[connectedNodes[i]].hiddenLabel = undefined;
+      }
+    }
+
+    // the main node gets its own color and its label back.
+    // allNodes[selectedNode].color = undefined;
+    allNodes[selectedNode].color = nodeColors[selectedNode];
+    if (allNodes[selectedNode].hiddenLabel !== undefined) {
+      allNodes[selectedNode].label = allNodes[selectedNode].hiddenLabel;
+      allNodes[selectedNode].hiddenLabel = undefined;
+    }
+  } else if (highlightActive === true) {
+    // console.log("highlightActive was true");
+    // reset all nodes
+    for (let nodeId in allNodes) {
+      // allNodes[nodeId].color = "purple";
+      allNodes[nodeId].color = nodeColors[nodeId];
+      // delete allNodes[nodeId].color;
+      if (allNodes[nodeId].hiddenLabel !== undefined) {
+        allNodes[nodeId].label = allNodes[nodeId].hiddenLabel;
+        allNodes[nodeId].hiddenLabel = undefined;
+      }
+    }
+    highlightActive = false;
+  }
+
+  // transform the object into an array
+  var updateArray = [];
+  if (params.nodes.length > 0) {
+    for (let nodeId in allNodes) {
+      if (allNodes.hasOwnProperty(nodeId)) {
+        // console.log(allNodes[nodeId]);
+        updateArray.push(allNodes[nodeId]);
+      }
+    }
+    nodes.update(updateArray);
+  } else {
+    // console.log("Nothing was selected");
+    for (let nodeId in allNodes) {
+      if (allNodes.hasOwnProperty(nodeId)) {
+        // console.log(allNodes[nodeId]);
+        // allNodes[nodeId].color = {};
+        updateArray.push(allNodes[nodeId]);
+      }
+    }
+    nodes.update(updateArray);
+  }
+}
+
+function filterHighlight(params) {
+  allNodes = nodes.get({ returnType: "Object" });
+  // if something is selected:
+  if (params.nodes.length > 0) {
+    filterActive = true;
+    let selectedNodes = params.nodes;
+
+    // hiding all nodes and saving the label
+    for (let nodeId in allNodes) {
+      allNodes[nodeId].hidden = true;
+      if (allNodes[nodeId].savedLabel === undefined) {
+        allNodes[nodeId].savedLabel = allNodes[nodeId].label;
+        allNodes[nodeId].label = undefined;
+      }
+    }
+
+    for (let i=0; i < selectedNodes.length; i++) {
+      allNodes[selectedNodes[i]].hidden = false;
+      if (allNodes[selectedNodes[i]].savedLabel !== undefined) {
+        allNodes[selectedNodes[i]].label = allNodes[selectedNodes[i]].savedLabel;
+        allNodes[selectedNodes[i]].savedLabel = undefined;
+      }
+    }
+
+  } else if (filterActive === true) {
+    // reset all nodes
+    for (let nodeId in allNodes) {
+      allNodes[nodeId].hidden = false;
+      if (allNodes[nodeId].savedLabel !== undefined) {
+        allNodes[nodeId].label = allNodes[nodeId].savedLabel;
+        allNodes[nodeId].savedLabel = undefined;
+      }
+    }
+    filterActive = false;
+  }
+
+  // transform the object into an array
+  var updateArray = [];
+  if (params.nodes.length > 0) {
+    for (let nodeId in allNodes) {
+      if (allNodes.hasOwnProperty(nodeId)) {
+        updateArray.push(allNodes[nodeId]);
+      }
+    }
+    nodes.update(updateArray);
+  } else {
+    for (let nodeId in allNodes) {
+      if (allNodes.hasOwnProperty(nodeId)) {
+        updateArray.push(allNodes[nodeId]);
+      }
+    }
+    nodes.update(updateArray);
+  }
+}
+
+function selectNode(nodes) {
+  network.selectNodes(nodes);
+  neighbourhoodHighlight({ nodes: nodes });
+  return nodes;
+}
+
+function selectNodes(nodes) {
+  network.selectNodes(nodes);
+  filterHighlight({nodes: nodes});
+  return nodes;
+}
+
+function highlightFilter(filter) {
+  let selectedNodes = []
+  let selectedProp = filter['property']
+  if (filter['item'] === 'node') {
+    let allNodes = nodes.get({ returnType: "Object" });
+    for (let nodeId in allNodes) {
+      if (allNodes[nodeId][selectedProp] && filter['value'].includes((allNodes[nodeId][selectedProp]).toString())) {
+        selectedNodes.push(nodeId)
+      }
+    }
+  }
+  else if (filter['item'] === 'edge'){
+    let allEdges = edges.get({returnType: 'object'});
+    // check if the selected property exists for selected edge and select the nodes connected to the edge
+    for (let edge in allEdges) {
+      if (allEdges[edge][selectedProp] && filter['value'].includes((allEdges[edge][selectedProp]).toString())) {
+        selectedNodes.push(allEdges[edge]['from'])
+        selectedNodes.push(allEdges[edge]['to'])
+      }
+    }
+  }
+  selectNodes(selectedNodes)
+}</script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/dist/vis-network.min.css" integrity="sha512-WgxfT5LWjfszlPHXRmBWHkV2eceiWTOBvrKCNbdgDYTHrT2AeLCGbF4sZlZw3UMN3WtL0tGUoIAKsu8mllg/XA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js" integrity="sha512-LnvoEWDFrqGHlHmDD2101OrLcbsfkrzoSpvtSQtxK3RMnRV0eOkhhBN2dXHKRrUU8p2DGRTk35n4O8nWSVe1mQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+            
+            
+            
+            
+            
+            
+
+        
+
+
+
+
+<!-- <link rel="stylesheet" href="../node_modules/vis/dist/vis.min.css" type="text/css" />
+<script type="text/javascript" src="../node_modules/vis/dist/vis.js"> </script>-->
+        <link
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-eOJMYsd53ii+scO/bJGFsiCZc+5NDVN2yr8+0RDqr0Ql0h+rP48ckxlpbzKgwra6"
+          crossorigin="anonymous"
+        />
+        <script
+          src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta3/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-JEW9xMcG8R+pH31jmWH6WWP0WintQrMb4s7ZOdauHnUtxwoG2vI5DkLtS3qm9Ekf"
+          crossorigin="anonymous"
+        ></script>
+
+
+        
+          
+        
+        <style type="text/css">
+
+             #mynetwork {
+                 width: 100%;
+                 height: 600px;
+                 background-color: #0a0a0f;
+                 border: 1px solid lightgray;
+                 position: relative;
+                 float: left;
+             }
+
+             
+
+             
+
+             
+             /* position absolute is important and the container has to be relative or absolute as well. */
+          div.popup {
+                 position:absolute;
+                 top:0px;
+                 left:0px;
+                 display:none;
+                 background-color:#f5f4ed;
+                 -moz-border-radius: 3px;
+                 -webkit-border-radius: 3px;
+                 border-radius: 3px;
+                 border: 1px solid #808074;
+                 box-shadow: 3px 3px 10px rgba(0, 0, 0, 0.2);
+          }
+
+          /* hide the original tooltip */
+          .vis-tooltip {
+            display:none;
+          }
+             
+        </style>
+    </head>
+
+
+    <body style="margin:0;padding:0;background:#0a0a0f"><div style="position:fixed;top:12px;left:12px;z-index:999;background:rgba(10,10,15,0.92);border:1px solid #1e1e2e;border-radius:8px;padding:12px 16px;font-family:monospace;font-size:11px;color:#c8d3d3;">
+  <div style="font-size:13px;font-weight:bold;color:#00ffc8;margin-bottom:8px;">Musubi Demo Graph</div>
+  <div style="margin-bottom:3px;"><span style="color:#ff5f6d;">●</span> inference</div>
+  <div style="margin-bottom:3px;"><span style="color:#34d399;">●</span> webdev</div>
+  <div style="margin-bottom:3px;"><span style="color:#60a5fa;">●</span> devops</div>
+  <div style="margin-bottom:3px;"><span style="color:#c084fc;">●</span> agents</div>
+  <div style="margin-bottom:3px;"><span style="color:#ffd166;">●</span> general</div>
+  <div style="margin-top:6px;color:#6a7a8a;font-size:10px;">20 docs · 17 edges · node size = degree</div>
+</div>
+        <div class="card" style="width: 100%">
+            
+            
+            <div id="mynetwork" class="card-body"></div>
+        </div>
+
+        
+        
+
+        <script type="text/javascript">
+
+              // initialize global variables.
+              var edges;
+              var nodes;
+              var allNodes;
+              var allEdges;
+              var nodeColors;
+              var originalNodes;
+              var network;
+              var container;
+              var options, data;
+              var filter = {
+                  item : '',
+                  property : '',
+                  value : []
+              };
+
+              
+
+              
+
+              // This method is responsible for drawing the graph, returns the drawn network
+              function drawGraph() {
+                  var container = document.getElementById('mynetwork');
+
+                  
+
+                  // parsing and collecting nodes and edges from the python
+                  nodes = new vis.DataSet([{"color": "#c084fc", "font": {"color": "#c8d3d3"}, "id": "0", "label": "agent-memory-persistence", "shape": "dot", "size": 12, "title": "Agent Memory: File-Based vs Database-Backed\n[agents] degree=0\nconcepts: agent, git, migration, sqlite"}, {"color": "#c084fc", "font": {"color": "#c8d3d3"}, "id": "1", "label": "mcp-server-architecture", "shape": "dot", "size": 18, "title": "MCP Server Architecture: Tools as a Service\n[agents] degree=1\nconcepts: agent, call, mcp, mcp server, prompt, session"}, {"color": "#c084fc", "font": {"color": "#c8d3d3"}, "id": "2", "label": "prompt-engineering-system...", "shape": "dot", "size": 24, "title": "System Prompts That Actually Work\n[agents] degree=2\nconcepts: agent, prompt, python, system prompt"}, {"color": "#c084fc", "font": {"color": "#c8d3d3"}, "id": "3", "label": "tool-calling-patterns", "shape": "dot", "size": 12, "title": "Tool Calling Patterns: When the Model Gets It Wrong\n[agents] degree=0\nconcepts: agent, orchestrator, tool calling"}, {"color": "#60a5fa", "font": {"color": "#c8d3d3"}, "id": "4", "label": "ci-cd-github-actions-caching", "shape": "dot", "size": 18, "title": "GitHub Actions: Caching node_modules Properly\n[devops] degree=1\nconcepts: github actions, gotcha, next.js"}, {"color": "#60a5fa", "font": {"color": "#c8d3d3"}, "id": "5", "label": "docker-gpu-oom-debugging", "shape": "dot", "size": 30, "title": "Docker GPU OOM: Why Your Container Crashes After 2 Hours\n[devops] degree=3\nconcepts: docker, gpu, inference, nvidia, ollama, vllm"}, {"color": "#60a5fa", "font": {"color": "#c8d3d3"}, "id": "6", "label": "monitoring-uptime-kuma-setup", "shape": "dot", "size": 12, "title": "Uptime Kuma: Self-Hosted Monitoring in 5 Minutes\n[devops] degree=0\nconcepts: cloudflare, docker, put"}, {"color": "#60a5fa", "font": {"color": "#c8d3d3"}, "id": "7", "label": "postgres-vacuum-deadlock", "shape": "dot", "size": 12, "title": "PostgreSQL Autovacuum Deadlock During Schema Migration\n[devops] degree=0\nconcepts: migration, postgresql"}, {"color": "#ffd166", "font": {"color": "#c8d3d3"}, "id": "8", "label": "debugging-methodology", "shape": "dot", "size": 24, "title": "Debugging: Bisect Before You Theorize\n[general] degree=2\nconcepts: commit, debugging, git"}, {"color": "#ffd166", "font": {"color": "#c8d3d3"}, "id": "9", "label": "git-worktree-parallel-bra...", "shape": "dot", "size": 24, "title": "Git Worktrees: Work on Two Branches Without Stashing\n[general] degree=2\nconcepts: branch, claude, claude code, commit, git, gotcha"}, {"color": "#ffd166", "font": {"color": "#c8d3d3"}, "id": "10", "label": "security-api-key-rotation", "shape": "dot", "size": 24, "title": "API Key Rotation: The Checklist You\u0027ll Forget\n[general] degree=2\nconcepts: api key, commit, git, security"}, {"color": "#ff5f6d", "font": {"color": "#c8d3d3"}, "id": "11", "label": "moe-vs-dense-bandwidth", "shape": "dot", "size": 24, "title": "MoE vs Dense: Why Bandwidth Decides Everything\n[inference] degree=2\nconcepts: dense, gemma, gpu, h100, moe, throughput"}, {"color": "#ff5f6d", "font": {"color": "#c8d3d3"}, "id": "12", "label": "ollama-vs-vllm-benchmark", "shape": "dot", "size": 42, "title": "Ollama vs vLLM: Same Model, 30% Speed Gap on GPU\n[inference] degree=5\nconcepts: benchmark, cuda, gotcha, gpu, inference, latency"}, {"color": "#ff5f6d", "font": {"color": "#c8d3d3"}, "id": "13", "label": "prefix-caching-explained", "shape": "dot", "size": 36, "title": "Prefix Caching: Why TTFT Drops from 2s to 0.1s\n[inference] degree=4\nconcepts: kv cache, prefix caching, prompt, system prompt, token, ttft"}, {"color": "#ff5f6d", "font": {"color": "#c8d3d3"}, "id": "14", "label": "quantization-formats-expl...", "shape": "dot", "size": 42, "title": "Quantization Format Cheat Sheet: FP8, NVFP4, GGUF, AWQ, GPTQ\n[inference] degree=5\nconcepts: apple silicon, awq, bf16, exllamav2, fp8, gb10"}, {"color": "#ff5f6d", "font": {"color": "#c8d3d3"}, "id": "15", "label": "vllm-fp8-kvcache-bug", "shape": "dot", "size": 36, "title": "vLLM FP8 KV Cache Causes Output Repetition\n[inference] degree=4\nconcepts: attention, bf16, fp8, inference, kv cache, quantization"}, {"color": "#34d399", "font": {"color": "#c8d3d3"}, "id": "16", "label": "nextjs-hreflang-canonical...", "shape": "dot", "size": 12, "title": "Next.js i18n: How hreflang x-default Splits Your SEO Rankings\n[webdev] degree=0\nconcepts: blog, canonical, hreflang, merge, next.js, search console"}, {"color": "#34d399", "font": {"color": "#c8d3d3"}, "id": "17", "label": "pagefind-static-search", "shape": "dot", "size": 18, "title": "Adding Client-Side Search to a Static Site with Pagefind\n[webdev] degree=1\nconcepts: gotcha, html, next.js, pagefind"}, {"color": "#34d399", "font": {"color": "#c8d3d3"}, "id": "18", "label": "react-server-components-g...", "shape": "dot", "size": 12, "title": "React Server Components: Three Gotchas That Cost Me a Day\n[webdev] degree=0\nconcepts: gotcha, react"}, {"color": "#34d399", "font": {"color": "#c8d3d3"}, "id": "19", "label": "vercel-domain-redirect-seo", "shape": "dot", "size": 12, "title": "Vercel Domain Redirects: 307 vs 308 and What Google Thinks\n[webdev] degree=0\nconcepts: search console, sitemap, vercel"}]);
+                  edges = new vis.DataSet([{"color": "rgba(0,255,200,0.15)", "from": "1", "title": "agent, prompt", "to": "2", "value": 2}, {"color": "rgba(0,255,200,0.15)", "from": "2", "title": "prompt, system prompt", "to": "13", "value": 2}, {"color": "rgba(0,255,200,0.15)", "from": "4", "title": "next.js, gotcha", "to": "17", "value": 2}, {"color": "rgba(0,255,200,0.15)", "from": "5", "title": "gpu, vram, vllm", "to": "12", "value": 5}, {"color": "rgba(0,255,200,0.15)", "from": "5", "title": "gpu, vllm, inference", "to": "14", "value": 5}, {"color": "rgba(0,255,200,0.15)", "from": "5", "title": "vllm, inference", "to": "15", "value": 2}, {"color": "rgba(0,255,200,0.15)", "from": "8", "title": "git, commit", "to": "10", "value": 2}, {"color": "rgba(0,255,200,0.15)", "from": "8", "title": "git, commit", "to": "9", "value": 2}, {"color": "rgba(0,255,200,0.15)", "from": "9", "title": "git, commit", "to": "10", "value": 2}, {"color": "rgba(0,255,200,0.15)", "from": "11", "title": "gpu, tok/s, throughput", "to": "12", "value": 3}, {"color": "rgba(0,255,200,0.15)", "from": "11", "title": "gpu, token, h100", "to": "14", "value": 4}, {"color": "rgba(0,255,200,0.15)", "from": "12", "title": "gotcha, gpu, vllm", "to": "14", "value": 7}, {"color": "rgba(0,255,200,0.15)", "from": "12", "title": "vllm, prefix caching, ttft", "to": "13", "value": 3}, {"color": "rgba(0,255,200,0.15)", "from": "12", "title": "vllm, inference, serving", "to": "15", "value": 3}, {"color": "rgba(0,255,200,0.15)", "from": "13", "title": "vllm, token, kv cache", "to": "14", "value": 3}, {"color": "rgba(0,255,200,0.15)", "from": "13", "title": "vllm, kv cache", "to": "15", "value": 2}, {"color": "rgba(0,255,200,0.15)", "from": "14", "title": "vllm, inference, serving", "to": "15", "value": 7}]);
+
+                  nodeColors = {};
+                  allNodes = nodes.get({ returnType: "Object" });
+                  for (nodeId in allNodes) {
+                    nodeColors[nodeId] = allNodes[nodeId].color;
+                  }
+                  allEdges = edges.get({ returnType: "Object" });
+                  // adding nodes and edges to the graph
+                  data = {nodes: nodes, edges: edges};
+
+                  var options = {"physics": {"forceAtlas2Based": {"gravitationalConstant": -80, "centralGravity": 0.01, "springLength": 120, "springConstant": 0.03, "damping": 0.8}, "solver": "forceAtlas2Based", "maxVelocity": 25, "stabilization": {"enabled": true, "iterations": 800, "fit": true}}, "interaction": {"hover": true, "tooltipDelay": 100}};
+
+                  
+
+
+                  
+
+                  network = new vis.Network(container, data, options);
+
+                  
+
+                  
+
+                  
+                  // make a custom popup
+                      var popup = document.createElement("div");
+                      popup.className = 'popup';
+                      popupTimeout = null;
+                      popup.addEventListener('mouseover', function () {
+                          console.log(popup)
+                          if (popupTimeout !== null) {
+                              clearTimeout(popupTimeout);
+                              popupTimeout = null;
+                          }
+                      });
+                      popup.addEventListener('mouseout', function () {
+                          if (popupTimeout === null) {
+                              hidePopup();
+                          }
+                      });
+                      container.appendChild(popup);
+
+
+                      // use the popup event to show
+                      network.on("showPopup", function (params) {
+                          showPopup(params);
+                      });
+
+                      // use the hide event to hide it
+                      network.on("hidePopup", function (params) {
+                          hidePopup();
+                      });
+
+                      // hiding the popup through css
+                      function hidePopup() {
+                          popupTimeout = setTimeout(function () { popup.style.display = 'none'; }, 500);
+                      }
+
+                      // showing the popup
+                      function showPopup(nodeId) {
+                          // get the data from the vis.DataSet
+                          var nodeData = nodes.get([nodeId]);
+                          popup.innerHTML = nodeData[0].title;
+
+                          // get the position of the node
+                          var posCanvas = network.getPositions([nodeId])[nodeId];
+
+                          // get the bounding box of the node
+                          var boundingBox = network.getBoundingBox(nodeId);
+
+                          //position tooltip:
+                          posCanvas.x = posCanvas.x + 0.5 * (boundingBox.right - boundingBox.left);
+
+                          // convert coordinates to the DOM space
+                          var posDOM = network.canvasToDOM(posCanvas);
+
+                          // Give it an offset
+                          posDOM.x += 10;
+                          posDOM.y -= 20;
+
+                          // show and place the tooltip.
+                          popup.style.display = 'block';
+                          popup.style.top = posDOM.y + 'px';
+                          popup.style.left = posDOM.x + 'px';
+                      }
+                  
+
+
+                  
+
+                  return network;
+
+              }
+              drawGraph();
+        </script>
+    </body>
+</html>
