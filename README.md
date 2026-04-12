@@ -38,7 +38,7 @@ actually use that structure.
 
 ## Install
 
-Requires Python 3.11+ and (for the `search` subcommand) [`@tobilu/qmd`][qmd].
+Requires **Python 3.11+**. No other external tools needed.
 
 ```bash
 git clone https://github.com/coolthor/musubi.git
@@ -48,19 +48,35 @@ uv tool install .        # or: pip install .
 
 This puts a `musubi` command on your PATH.
 
+### Optional: qmd integration
+
+If you use [`@tobilu/qmd`][qmd] (an on-device hybrid search tool for
+markdown), musubi can read its SQLite index directly for richer results:
+
+- `musubi build` without `--source` reads from the qmd index (includes
+  embeddings for a better isolation fallback)
+- `musubi search` delegates keyword search to `qmd search --json` and
+  expands results with graph neighbors
+
+qmd is **not required**. Without it, use `musubi build --source <dir>`
+to build from a plain directory of markdown files.
+
 ---
 
 ## Quick start
 
 ```bash
-# 1. Build the graph from your qmd SQLite index
+# Option A: build from a directory of markdown files (no external tools)
+musubi build --source ~/my-notes/
+
+# Option B: build from a qmd SQLite index (if you have @tobilu/qmd)
 musubi build
 
-# 2. Poke around
+# Then explore
 musubi stats
 musubi neighbors "some-doc-slug"
 musubi cold --limit 20
-musubi search "your query here"
+musubi search "your query here"     # requires qmd for keyword search
 ```
 
 ---
@@ -74,7 +90,7 @@ musubi search "your query here"
 | `musubi cold [--limit N]` | Docs with low degree + stale modification time. Inverse of "hot" |
 | `musubi search <query>` | Hybrid: calls `qmd search --json` then boosts graph neighbors of each hit |
 | `musubi path <query>` | Resolve a query (id / path / title substring) to node ids — debug |
-| `musubi build` | Rebuild the graph from the qmd SQLite index |
+| `musubi build [--source DIR]` | Rebuild graph from a directory or qmd index |
 
 All queries accept:
 - a numeric node id

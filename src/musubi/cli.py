@@ -309,14 +309,20 @@ def cmd_path(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def cmd_build(args: argparse.Namespace, cfg: Config) -> int:
+    from pathlib import Path as _Path
+
     from musubi import builder  # lazy — this is the heavy import path
 
+    source = _Path(args.source) if getattr(args, "source", None) else None
     started = datetime.now(timezone.utc)
     log_path = cfg.log_dir / "build.log"
     cfg.ensure_dirs()
 
-    print(c(f"◇ Building musubi graph...", "cyan"))
-    print(c(f"  qmd index: {cfg.qmd_db}", "dim"))
+    print(c("◇ Building musubi graph...", "cyan"))
+    if source:
+        print(c(f"  source:    {source} (filesystem mode)", "dim"))
+    else:
+        print(c(f"  source:    {cfg.qmd_db} (qmd sqlite)", "dim"))
     print(c(f"  output:    {cfg.graph_path}", "dim"))
     if cfg.concepts_file:
         print(c(f"  concepts:  default + {cfg.concepts_file}", "dim"))
@@ -324,7 +330,7 @@ def cmd_build(args: argparse.Namespace, cfg: Config) -> int:
         print(c("  concepts:  default only (no user extension)", "dim"))
 
     try:
-        summary = builder.build(cfg, verbose=True)
+        summary = builder.build(cfg, source=source, verbose=True)
     except FileNotFoundError as e:
         print(c(str(e), "red"), file=sys.stderr)
         return 2
@@ -377,7 +383,18 @@ def main(argv: list[str] | None = None) -> int:
     pp.add_argument("query")
     pp.set_defaults(func=cmd_path)
 
-    pb = sub.add_parser("build", help="rebuild graph from the qmd sqlite index")
+    pb = sub.add_parser(
+        "build",
+        help="rebuild graph from qmd index or a directory of markdown files",
+    )
+    pb.add_argument(
+        "--source",
+        metavar="DIR",
+        help=(
+            "path to a directory of *.md/*.mdx files (filesystem mode). "
+            "If omitted, reads from the qmd SQLite index at $MUSUBI_QMD_DB."
+        ),
+    )
     pb.set_defaults(func=cmd_build)
 
     args = p.parse_args(argv)

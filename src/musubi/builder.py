@@ -1,14 +1,23 @@
-"""Graph builder — reads a qmd-compatible SQLite index and produces a
-NetworkX graph serialized to JSON.
+"""Graph builder — reads markdown documents and produces a NetworkX graph.
 
-The hybrid strategy (from our v0.3 experiments):
+Two source modes:
+
+1. **qmd SQLite** (default) — reads from the ``@tobilu/qmd`` index at
+   ``$MUSUBI_QMD_DB``. Gets content, metadata, and embeddings in one
+   shot. Embeddings enable a fallback for isolated nodes (Phase 2).
+2. **Filesystem** (``musubi build --source /path/to/notes``) — recursively
+   reads ``*.md`` / ``*.mdx`` from a directory. No external tool needed.
+   Parses YAML frontmatter for title/date/tags. No embedding fallback
+   (concept edges only), but isolation rate is typically < 3%.
+
+The graph build strategy:
 
 1. **Concept co-occurrence edges** — for each concept, connect every pair
-   of documents that both mention it. Cap at `concept_weight >= 2` to
+   of documents that both mention it. Cap at ``concept_weight >= 2`` to
    avoid noise from single-concept overlaps.
-2. **Embedding fallback for isolates** — any node left with degree 0 after
-   phase 1 gets up to 3 nearest-neighbor edges from the qmd vector index.
-   This brings the isolation rate from ~35% down to 0%.
+2. **Embedding fallback for isolates** (qmd mode only) — any node left
+   with degree 0 after step 1 gets up to 3 nearest-neighbor edges from
+   the qmd vector index. Brings isolation rate from ~35% down to 0%.
 
 Runtime cost on a 400-doc corpus: ~15-25 seconds on an M-series Mac.
 """
@@ -26,6 +35,79 @@ from typing import Any
 
 from musubi.concepts import DEFAULT_PATH_CONCEPTS, load_concepts
 from musubi.config import Config
+
+
+# ---------------------------------------------------------------------------
+# Frontmatter parser (stdlib-only, no pyyaml dependency)
+# ---------------------------------------------------------------------------
+
+
+def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """Extract YAML-ish frontmatter from markdown text.
+
+    Returns (metadata_dict, body_without_frontmatter). Only handles flat
+    key: value pairs — enough for title, date, description, tags. Does
+    NOT handle nested YAML, arrays, or multiline values.
+    """
+    if not text.startswith("---"):
+        return {}, text
+    end = text.find("\n---", 3)
+    if end < 0:
+        return {}, text
+    fm_block = text[3:end].strip()
+    body = text[end + 4 :].lstrip("\n")
+    meta: dict[str, str] = {}
+    for line in fm_block.splitlines():
+        colon = line.find(":")
+        if colon > 0:
+            key = line[:colon].strip().lower()
+            val = line[colon + 1 :].strip().strip('"').strip("'")
+            if key and val:
+                meta[key] = val
+    return meta, body
+
+
+# ---------------------------------------------------------------------------
+# Source: filesystem (no external dependencies)
+# ---------------------------------------------------------------------------
+
+
+def _read_fs_documents(root: Path) -> list[dict[str, Any]]:
+    """Recursively read *.md / *.mdx from a directory tree.
+
+    Each document gets a synthetic integer id and a collection name derived
+    from the first subdirectory under root (or "default" if files live at
+    root level).
+    """
+    docs: list[dict[str, Any]] = []
+    md_files = sorted(root.rglob("*.md")) + sorted(root.rglob("*.mdx"))
+    for idx, filepath in enumerate(md_files):
+        rel = filepath.relative_to(root)
+        parts = rel.parts
+        collection = parts[0] if len(parts) > 1 else "default"
+
+        stat = filepath.stat()
+        modified_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+
+        text = filepath.read_text(encoding="utf-8", errors="replace")
+        meta, body = _parse_frontmatter(text)
+
+        title = meta.get("title") or filepath.stem
+        docs.append({
+            "id": idx,
+            "collection": collection,
+            "path": str(rel),
+            "title": title,
+            "modified_at": modified_at,
+            "_content": body,  # carry content in-memory (no sqlite)
+            "_meta": meta,
+        })
+    return docs
+
+
+# ---------------------------------------------------------------------------
+# Source: qmd SQLite index
+# ---------------------------------------------------------------------------
 
 
 def _read_md_documents(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -233,18 +315,28 @@ def _build_graph(docs, doc_concepts, hash_embeddings):
     return G, concept_edges, embedding_edges
 
 
-def build(cfg: Config, *, verbose: bool = True) -> dict[str, int]:
-    """Build the graph from the configured qmd sqlite index and save JSON.
+def build(
+    cfg: Config,
+    *,
+    source: Path | None = None,
+    verbose: bool = True,
+) -> dict[str, int]:
+    """Build the graph and save JSON.
+
+    Parameters
+    ----------
+    cfg : Config
+        Runtime configuration (paths, concepts file, etc.).
+    source : Path | None
+        If a directory path is given, reads markdown files directly from
+        the filesystem (no qmd dependency). If ``None`` (default), reads
+        from the configured qmd SQLite index.
+    verbose : bool
+        Print progress to stdout.
 
     Returns a small dict with summary counts so the CLI can print them.
     """
     import networkx as nx  # lazy import
-
-    if not cfg.qmd_db.exists():
-        raise FileNotFoundError(
-            f"qmd index not found at {cfg.qmd_db}. "
-            f"Is @tobilu/qmd installed and indexed? Set MUSUBI_QMD_DB to override."
-        )
 
     tech_terms = load_concepts(cfg.concepts_file)
     path_concepts = DEFAULT_PATH_CONCEPTS
@@ -253,32 +345,59 @@ def build(cfg: Config, *, verbose: bool = True) -> dict[str, int]:
         if verbose:
             print(msg)
 
-    log(f"Opening qmd index: {cfg.qmd_db}")
-    conn = sqlite3.connect(cfg.qmd_db)
-    try:
-        docs = _read_md_documents(conn)
+    hash_embeddings: dict[str, Any] = {}
+
+    if source is not None:
+        # ── Filesystem mode ──────────────────────────────────────────
+        if not source.is_dir():
+            raise FileNotFoundError(f"Source directory not found: {source}")
+        log(f"Scanning directory: {source}")
+        docs = _read_fs_documents(source)
         log(f"  {len(docs)} markdown documents")
 
         doc_concepts: dict[Any, set[str]] = {}
         for doc in docs:
-            content = _read_content(conn, doc["hash"])
+            content = doc.pop("_content", "")
+            doc.pop("_meta", None)
             doc_concepts[doc["id"]] = _extract_concepts(
                 content, doc["title"], doc["path"], tech_terms, path_concepts
             )
+        log("  (no embeddings — filesystem mode uses concept edges only)")
+    else:
+        # ── qmd SQLite mode ──────────────────────────────────────────
+        if not cfg.qmd_db.exists():
+            raise FileNotFoundError(
+                f"qmd index not found at {cfg.qmd_db}.\n"
+                f"Either install @tobilu/qmd and run `qmd update`, or use:\n"
+                f"  musubi build --source /path/to/your/notes/"
+            )
+        log(f"Opening qmd index: {cfg.qmd_db}")
+        conn = sqlite3.connect(cfg.qmd_db)
+        try:
+            docs = _read_md_documents(conn)
+            log(f"  {len(docs)} markdown documents")
 
-        log("Reading embeddings (may take a moment)...")
-        hash_embeddings = _read_embeddings(conn, {d["hash"] for d in docs})
-        log(f"  {len(hash_embeddings)} embedded docs")
-    finally:
-        conn.close()
+            doc_concepts = {}
+            for doc in docs:
+                content = _read_content(conn, doc["hash"])
+                doc_concepts[doc["id"]] = _extract_concepts(
+                    content, doc["title"], doc["path"], tech_terms, path_concepts
+                )
+
+            log("Reading embeddings (may take a moment)...")
+            hash_embeddings = _read_embeddings(conn, {d["hash"] for d in docs})
+            log(f"  {len(hash_embeddings)} embedded docs")
+        finally:
+            conn.close()
 
     log("Building hybrid graph...")
     G, n_concept, n_embed = _build_graph(docs, doc_concepts, hash_embeddings)
     iso = sum(1 for n in G.nodes() if G.degree(n) == 0)
 
     log(f"  concept edges: {n_concept}")
-    log(f"  embedding edges (fallback): {n_embed}")
-    log(f"  isolated after both: {iso}")
+    if n_embed:
+        log(f"  embedding edges (fallback): {n_embed}")
+    log(f"  isolated: {iso}")
     log(f"  total: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
 
     cfg.ensure_dirs()
