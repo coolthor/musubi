@@ -26,7 +26,7 @@ class Graph:
     edges: list[dict[str, Any]]
     id_to_node: dict[Any, dict[str, Any]]
     path_to_id: dict[str, Any]
-    title_to_id: dict[str, Any]
+    title_to_ids: dict[str, list[Any]]
     neighbors: dict[Any, list[dict[str, Any]]]
     degree: dict[Any, int]
 
@@ -52,14 +52,14 @@ class Graph:
 
         id_to_node: dict[Any, dict[str, Any]] = {}
         path_to_id: dict[str, Any] = {}
-        title_to_id: dict[str, Any] = {}
+        title_to_ids: dict[str, list[Any]] = defaultdict(list)
         for idx, n in enumerate(nodes):
             node_id = n.get("id", idx)
             id_to_node[node_id] = n
             if n.get("path"):
                 path_to_id[n["path"]] = node_id
             if n.get("title"):
-                title_to_id[n["title"]] = node_id
+                title_to_ids[n["title"]].append(node_id)
 
         neighbors: dict[Any, list[dict[str, Any]]] = defaultdict(list)
         degree: dict[Any, int] = defaultdict(int)
@@ -77,7 +77,7 @@ class Graph:
             edges=edges,
             id_to_node=id_to_node,
             path_to_id=path_to_id,
-            title_to_id=title_to_id,
+            title_to_ids=dict(title_to_ids),
             neighbors=dict(neighbors),
             degree=dict(degree),
         )
@@ -124,8 +124,12 @@ class Graph:
         if path_hits:
             return path_hits
 
-        # 6. Title substring
-        return [nid for t, nid in self.title_to_id.items() if ql in t.lower()]
+        # 6. Title substring (returns all docs matching, including duplicate titles)
+        hits: list[Any] = []
+        for t, nids in self.title_to_ids.items():
+            if ql in t.lower():
+                hits.extend(nids)
+        return hits
 
     def neighbors_of(self, node_id: Any, limit: int = 10) -> list[dict[str, Any]]:
         nbrs = self.neighbors.get(node_id, [])

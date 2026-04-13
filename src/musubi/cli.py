@@ -257,12 +257,20 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
         hits = hits.get("results", []) if isinstance(hits, dict) else []
 
     base_ids: list[tuple[Any, float]] = []
+    skipped = 0
     for rank, hit in enumerate(hits[: args.limit]):
         file_field = hit.get("file") or hit.get("path") or ""
         nid = Graph.match_qmd_uri(file_field, g.path_to_id)
         if nid is None:
+            skipped += 1
             continue
         base_ids.append((nid, 1.0 / (rank + 1)))
+
+    if skipped:
+        print(
+            c(f"  ({skipped} qmd hit(s) skipped — not in graph or ambiguous basename)", "dim"),
+            file=sys.stderr,
+        )
 
     expanded: dict[Any, float] = {}
     for nid, base in base_ids:
