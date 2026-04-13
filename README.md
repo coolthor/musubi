@@ -308,6 +308,7 @@ defaults mean you don't need to set anything:
 | `MUSUBI_QMD_BIN` | `qmd` on PATH | qmd CLI binary |
 | `MUSUBI_CONCEPTS_FILE` | `$XDG_CONFIG_HOME/musubi/concepts.txt` | Custom concept list |
 | `MUSUBI_LOG_DIR` | `$XDG_STATE_HOME/musubi/` | Build logs |
+| `MUSUBI_WATCH_DIRS` | *(none)* | Colon-separated dirs to watch for staleness |
 
 ---
 
@@ -451,11 +452,51 @@ separate `graph.json`, and never touches the source.
 
 ---
 
-## Weekly auto-rebuild
+## Keeping the graph fresh
 
-```cron
-# every Sunday at 02:17: rebuild graph from latest notes
-17 2 * * 0 musubi build --source ~/notes/ >> /tmp/musubi-weekly.log 2>&1
+Musubi auto-rebuilds the graph when it detects staleness — **no cron
+job or manual rebuild needed.**
+
+Every time you run `musubi neighbors`, `musubi search`, `musubi cold`,
+or `musubi stats`, musubi checks three conditions:
+
+1. **Graph age** — older than 24 hours?
+2. **Source index** — was the qmd sqlite re-indexed since the last build?
+3. **Watched directories** — any `.md` file newer than the graph?
+
+If any condition is true, musubi rebuilds automatically before returning
+results:
+
+```
+$ musubi neighbors "vllm"
+  ↻ graph is stale (3d old), auto-rebuilding...
+  ✓ rebuilt: 402 docs, 16596 edges
+
+◇ [ai-muninn] dgx-spark-nemotron-120b-vllm
+  ...
+```
+
+### Watching extra directories
+
+Set `MUSUBI_WATCH_DIRS` to monitor directories outside the qmd index —
+for example, an auto-memory directory where your AI assistant writes
+notes:
+
+```bash
+# in ~/.zshrc or ~/.bashrc
+export MUSUBI_WATCH_DIRS="$HOME/.claude/memory:$HOME/extra-notes"
+```
+
+Colon-separated, just like `$PATH`. Any `.md` file in those directories
+that's newer than the graph triggers a rebuild on the next query.
+
+### Manual rebuild
+
+You can still force a rebuild anytime:
+
+```bash
+musubi build                        # from qmd index
+musubi build --source ~/notes/      # from a directory
 ```
 
 ---
