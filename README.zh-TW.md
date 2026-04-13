@@ -52,7 +52,7 @@ Musubi 掃描一個資料夾裡的 Markdown 檔案，從每篇文件中提取技
 
 ## 為什麼不用其他工具？
 
-| 工具 | 它做什麼 | Musubi 的差異 |
+| 工具 | 它做什麼 | 和 Musubi 的差異 |
 |------|---------|-------------|
 | **Obsidian Graph View** | `[[wikilinks]]` 視覺化圖 | 綁定 Obsidian。邊是手動建的（你自己寫連結）。沒有概念提取、沒有冷節點偵測、沒有 CLI。Musubi 對任何 Markdown 檔案都能用。 |
 | **LightRAG** | LLM 驅動的 entity extraction → 知識圖譜 → RAG | 每次 build 都要燒 LLM token（$$）。需要架 server。為 RAG pipeline 設計，不是個人筆記管理。Musubi 的 build 是確定性的、免費的，24 秒完成。 |
