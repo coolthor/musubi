@@ -1,6 +1,8 @@
 # Musubi 結び
 
-**Tie your markdown notes together — without leaving markdown.**
+**Surface the connections your search engine misses.**
+
+A deterministic knowledge graph for markdown notes — no LLM, no lock-in, no server.
 
 <p align="center">
   <img src="assets/demo-graph.png" alt="Musubi demo knowledge graph" width="100%">
