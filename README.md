@@ -91,6 +91,16 @@ your own domain vocabulary in a plain text file (see
 
 Requires **Python 3.11+**. No other external tools needed.
 
+**One-liner** (if you have [uv](https://docs.astral.sh/uv/)):
+
+```bash
+uvx --from git+https://github.com/coolthor/musubi musubi init
+```
+
+This downloads, installs, and launches the setup wizard in one shot.
+
+**Or install permanently:**
+
 ```bash
 git clone https://github.com/coolthor/musubi.git
 cd musubi
