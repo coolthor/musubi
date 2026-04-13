@@ -503,24 +503,85 @@ clones the repo gets the same test.
 
 ## Using with Claude Code
 
-Add this to your project's `CLAUDE.md` or global instructions to make
-Claude Code automatically use musubi when retrieving knowledge:
+Two integration levels — pick the one that fits:
+
+### Option A: Auto-hook (recommended)
+
+Add a [PreToolUse hook](https://docs.anthropic.com/en/docs/claude-code/hooks)
+that runs `musubi search` **automatically before every web search**. Claude
+sees your internal knowledge before hitting the web — no way to forget.
+
+**1. Save the hook script:**
+
+```bash
+mkdir -p ~/.claude/hooks
+
+cat > ~/.claude/hooks/musubi-presearch.sh << 'HOOKEOF'
+#!/bin/bash
+# Runs musubi search before WebSearch/WebFetch so Claude sees
+# internal knowledge before searching externally.
+MUSUBI=$(command -v musubi 2>/dev/null)
+[ -z "$MUSUBI" ] && exit 0
+[ ! -f "$HOME/.local/share/musubi/graph.json" ] && exit 0
+
+QUERY=$(echo "$TOOL_INPUT" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(d.get('query', ''))
+except:
+    pass
+" 2>/dev/null)
+[ -z "$QUERY" ] && exit 0
+
+RESULT=$("$MUSUBI" search "$QUERY" --limit 3 2>/dev/null)
+if [ -n "$RESULT" ] && ! echo "$RESULT" | grep -q "No results\|not found"; then
+    echo "🔗 musubi (internal knowledge):"
+    echo "$RESULT"
+fi
+HOOKEOF
+
+chmod +x ~/.claude/hooks/musubi-presearch.sh
+```
+
+**2. Add to `~/.claude/settings.json`** (inside `hooks.PreToolUse`):
+
+```json
+{
+  "matcher": "WebSearch",
+  "hooks": [{
+    "type": "command",
+    "command": "bash ~/.claude/hooks/musubi-presearch.sh",
+    "statusMessage": "checking internal knowledge..."
+  }]
+}
+```
+
+Now every WebSearch shows a `🔗 musubi` block first — Claude automatically
+knows what you already have before searching the internet.
+
+### Option B: CLAUDE.md instructions (simpler)
+
+If you don't want hooks, add this to your `CLAUDE.md` instead:
 
 ```markdown
 ### Retrieval workflow
 
-1. Query your knowledge base: `qmd search "<topic>"` or `musubi search "<topic>"`
-2. If a relevant doc is found, expand with graph neighbors:
+1. Before searching the web, check internal knowledge:
+   `musubi search "<topic>"` — shows keyword hits + graph neighbors
+2. If a relevant doc is found, expand context:
    `musubi neighbors "<filename>" --limit 3`
-3. Read the most relevant docs and proceed with the task.
-
-Use `musubi search` when you want keyword hits + graph-expanded neighbors
-in one shot. Use `musubi neighbors` after finding a specific doc to see
-what's connected to it. Use `musubi cold` for periodic health checks.
+3. Only then search externally for what's actually new.
 ```
 
-No MCP server needed — Claude Code calls musubi via the shell, same as
-`grep` or `git`.
+This relies on Claude following instructions (usually works, but not
+guaranteed — Option A is foolproof).
+
+### No MCP server needed
+
+Both options work through the shell. Claude Code calls `musubi` the
+same way it calls `grep` or `git`. No server process, no configuration
+beyond the hook or CLAUDE.md text.
 
 ---
 
