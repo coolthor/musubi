@@ -36,11 +36,13 @@ The result is a JSON graph you can query instantly from the command line:
 
 | Command | What you get |
 |---------|-------------|
+| `musubi init` | Interactive setup — try the demo or point at your notes |
+| `musubi build --source <dir>` | Build the graph from your notes directory |
+| `musubi stats` | "How big is my knowledge graph? What are the hubs?" |
 | `musubi neighbors <doc>` | "What other notes are related to this one?" |
 | `musubi cold` | "Which notes have gone stale and lost connections?" |
-| `musubi search <query>` | "Search this topic + show graph-expanded neighbors" |
-| `musubi stats` | "How big is my knowledge graph? What are the hubs?" |
-| `musubi build --source <dir>` | "Rebuild the graph from my notes directory" |
+| `musubi search <query>` | Search + show graph-expanded neighbors |
+| `musubi benchmark` | Measure how many tokens musubi saves you ([details](#measure-your-token-savings)) |
 
 No servers. No databases. No API keys. Just markdown files and a CLI.
 
@@ -443,6 +445,70 @@ separate `graph.json`, and never touches the source.
 # every Sunday at 02:17: rebuild graph from latest notes
 17 2 * * 0 musubi build --source ~/notes/ >> /tmp/musubi-weekly.log 2>&1
 ```
+
+---
+
+## Measure your token savings
+
+Musubi itself uses **zero LLM tokens** — the graph is built with
+deterministic regex matching, not LLM entity extraction. But does using
+musubi save tokens when you *use* an LLM to search your notes?
+
+The included benchmark answers this empirically:
+
+```bash
+# Preview the 10 test tasks (no API calls, no cost)
+musubi benchmark --dry-run
+
+# Full run — compares grep-only vs musubi-augmented retrieval
+# Requires ANTHROPIC_API_KEY. Cost: ~$0.15 per run.
+export ANTHROPIC_API_KEY=sk-ant-...
+musubi benchmark
+```
+
+The benchmark runs each task twice — once with only `grep` + `cat`
+(baseline), once with `musubi search` + `musubi neighbors` — and
+measures total tokens consumed. Results go to
+`experiments/token-saving/results/summary.md`.
+
+### What it tests
+
+| Task type | Count | What it measures |
+|-----------|-------|-----------------|
+| Direct lookup | 3 | Find a note when you know the topic |
+| Cross-domain | 3 | Find notes across different collections — musubi's main advantage |
+| Exploration | 2 | "Show me related notes" — only graph can do this |
+| Health check | 2 | "What's stale?" — only musubi can answer |
+
+### Why we test instead of claim
+
+We don't put "saves 40% tokens" in the README without data. Run the
+benchmark yourself and see your actual numbers. The experiment uses the
+bundled demo notes (20 docs) so results are reproducible — anyone who
+clones the repo gets the same test.
+
+---
+
+## Using with Claude Code
+
+Add this to your project's `CLAUDE.md` or global instructions to make
+Claude Code automatically use musubi when retrieving knowledge:
+
+```markdown
+### Retrieval workflow
+
+1. Query your knowledge base: `qmd search "<topic>"` or `musubi search "<topic>"`
+2. If a relevant doc is found, expand with graph neighbors:
+   `musubi neighbors "<filename>" --limit 3`
+3. Read the most relevant docs and proceed with the task.
+
+Use `musubi search` when you want keyword hits + graph-expanded neighbors
+in one shot. Use `musubi neighbors` after finding a specific doc to see
+what's connected to it. Use `musubi cold` for periodic health checks.
+```
+
+No MCP server needed — Claude Code calls musubi via the shell, same as
+`grep` or `git`.
 
 ---
 
