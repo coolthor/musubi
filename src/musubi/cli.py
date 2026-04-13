@@ -313,6 +313,44 @@ def cmd_init(args: argparse.Namespace, _cfg: Config | None) -> int:
     return run_init()
 
 
+def cmd_benchmark(args: argparse.Namespace, _cfg: Config | None) -> int:
+    """Run the token saving benchmark using the experiment script."""
+    import importlib.resources
+
+    # Find the experiment script
+    exp_script = None
+    # Check package data
+    try:
+        pkg = importlib.resources.files("musubi")
+        candidate = Path(str(pkg)).parent.parent / "experiments" / "token-saving" / "run_experiment.py"
+        if candidate.exists():
+            exp_script = candidate
+    except (TypeError, FileNotFoundError):
+        pass
+    # Check relative to source (dev install)
+    if exp_script is None:
+        dev = Path(__file__).parent.parent.parent / "experiments" / "token-saving" / "run_experiment.py"
+        if dev.exists():
+            exp_script = dev
+
+    if exp_script is None:
+        print(c("Experiment script not found.", "red"), file=sys.stderr)
+        print(c("Clone the repo and run from the project directory:", "dim"), file=sys.stderr)
+        print("  python experiments/token-saving/run_experiment.py", file=sys.stderr)
+        return 1
+
+    cmd = [sys.executable, str(exp_script)]
+    if args.dry_run:
+        cmd.append("--dry-run")
+    if args.task:
+        cmd.extend(["--task", args.task])
+    if args.model:
+        cmd.extend(["--model", args.model])
+
+    import subprocess as sp
+    return sp.run(cmd).returncode
+
+
 def cmd_build(args: argparse.Namespace, cfg: Config) -> int:
     from pathlib import Path as _Path
 
@@ -404,6 +442,15 @@ def main(argv: list[str] | None = None) -> int:
 
     pi = sub.add_parser("init", help="interactive setup wizard (demo → your notes)")
     pi.set_defaults(func=cmd_init)
+
+    pbench = sub.add_parser(
+        "benchmark",
+        help="measure token savings vs grep-only search (requires ANTHROPIC_API_KEY)",
+    )
+    pbench.add_argument("--task", help="run a single task by id")
+    pbench.add_argument("--dry-run", action="store_true", help="preview tasks without API calls")
+    pbench.add_argument("--model", default="claude-sonnet-4-20250514", help="model to use")
+    pbench.set_defaults(func=cmd_benchmark)
 
     args = p.parse_args(argv)
     if not getattr(args, "command", None):
