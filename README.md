@@ -4,6 +4,8 @@
 
 A deterministic knowledge graph for markdown notes — no LLM, no lock-in, no server.
 
+> English | [繁體中文](README.zh-TW.md)
+
 <p align="center">
   <img src="assets/demo-graph.png" alt="Musubi demo knowledge graph" width="100%">
 </p>
@@ -403,15 +405,10 @@ stopwords and connecting everything to everything. Remove overly generic
 terms from your concepts file. If important domain terms are missing,
 add them.
 
-### Step 4: Set up auto-rebuild (optional)
+### Step 4: You're done — the graph stays fresh automatically
 
-Once you're happy with the graph, schedule a weekly rebuild so it
-stays fresh as you add new notes:
-
-```cron
-# every Sunday at 02:17: rebuild graph from latest notes
-17 2 * * 0 musubi build --source ~/notes/ >> /tmp/musubi-weekly.log 2>&1
-```
+Musubi auto-rebuilds when it detects staleness (see
+[Keeping the graph fresh](#keeping-the-graph-fresh)). No cron job needed.
 
 ### Directory structure tips
 
