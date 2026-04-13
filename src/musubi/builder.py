@@ -256,35 +256,77 @@ def _build_graph(docs, doc_concepts, hash_embeddings):
             concept_count=len(concepts),
         )
 
-    # Phase 1 — concept co-occurrence
+    # Phase 1 — IDF-weighted concept co-occurrence
+    #
+    # Instead of counting shared concepts equally, each concept is weighted
+    # by its Inverse Document Frequency: rare concepts (appearing in few
+    # docs) contribute more than ubiquitous ones like "api" or "token".
+    #
+    #   idf(concept) = log(N / df)
+    #
+    # where N = total docs, df = docs containing the concept.
+    # Concepts appearing in > 40% of docs are auto-excluded (stop-concepts).
+
+    import math
+
+    n_docs = len(docs)
+    stop_threshold = max(n_docs * 0.4, 10)  # 40% of corpus or 10, whichever is larger
+
     concept_to_docs: dict[str, set[Any]] = defaultdict(set)
     for doc_id, concepts in doc_concepts.items():
-        for c in concepts:
-            if not c.startswith("h:"):
-                concept_to_docs[c].add(doc_id)
+        for c_item in concepts:
+            if not c_item.startswith("h:"):
+                concept_to_docs[c_item].add(doc_id)
+
+    # Compute IDF and identify stop-concepts
+    concept_idf: dict[str, float] = {}
+    stop_concepts: list[str] = []
+    for concept, doc_ids in concept_to_docs.items():
+        df = len(doc_ids)
+        if df < 2:
+            continue  # can't form edges with 1 doc
+        if df > stop_threshold:
+            stop_concepts.append(f"{concept}({df})")
+            continue  # too common — auto-excluded
+        concept_idf[concept] = math.log(n_docs / df)
+
+    if stop_concepts:
+        print(f"  stop-concepts (>{stop_threshold:.0f} docs): {', '.join(sorted(stop_concepts)[:8])}"
+              + (f" +{len(stop_concepts) - 8} more" if len(stop_concepts) > 8 else ""))
 
     edge_data: dict[tuple[Any, Any], dict[str, Any]] = defaultdict(
-        lambda: {"concept_weight": 0, "shared": []}
+        lambda: {"idf_weight": 0.0, "shared": []}
     )
-    for concept, doc_ids in concept_to_docs.items():
-        if len(doc_ids) < 2 or len(doc_ids) > 80:
-            continue
+    for concept, idf in concept_idf.items():
+        doc_ids = concept_to_docs[concept]
         doc_list = list(doc_ids)
         for i in range(len(doc_list)):
             for j in range(i + 1, len(doc_list)):
                 a = min(doc_list[i], doc_list[j])
                 b = max(doc_list[i], doc_list[j])
-                edge_data[(a, b)]["concept_weight"] += 1
+                edge_data[(a, b)]["idf_weight"] += idf
                 if len(edge_data[(a, b)]["shared"]) < 6:
                     edge_data[(a, b)]["shared"].append(concept)
 
+    # Sort shared concepts by IDF (most specific first) for display
+    for data in edge_data.values():
+        data["shared"].sort(key=lambda c: concept_idf.get(c, 0), reverse=True)
+
+    # Edge threshold: IDF-weighted sum must exceed this to create an edge.
+    # With IDF weighting, a single rare concept (appearing in <5% of docs)
+    # has IDF ≈ 3.0-5.0, while common ones (>20% of docs) have IDF < 1.6.
+    # Threshold 4.0 means: need either one very rare shared concept OR
+    # two moderately specific ones. This prevents "everything connects to
+    # everything" while keeping genuine cross-topic links.
+    edge_threshold = 4.0
+
     concept_edges = 0
     for (a, b), data in edge_data.items():
-        if data["concept_weight"] >= 2:
+        if data["idf_weight"] >= edge_threshold:
             G.add_edge(
                 a,
                 b,
-                weight=data["concept_weight"],
+                weight=round(data["idf_weight"], 2),
                 shared_concepts=data["shared"],
                 edge_type="concept",
             )
@@ -414,7 +456,8 @@ def build(
     cfg.ensure_dirs()
     data = nx.node_link_data(G, edges="edges")
     data["graph"]["built_at"] = datetime.now(timezone.utc).isoformat()
-    data["graph"]["version"] = "musubi-0.1"
+    data["graph"]["version"] = "musubi-0.2"
+    data["graph"]["edge_weighting"] = "idf"
     with cfg.graph_path.open("w") as f:
         json.dump(data, f, ensure_ascii=False)
     log(f"  wrote: {cfg.graph_path}")
