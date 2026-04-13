@@ -90,13 +90,16 @@ your own domain vocabulary in a plain text file (see
 Requires **Python 3.11+**. No other external tools needed.
 
 ```bash
-pip install musubi          # from PyPI (coming soon)
-
-# or from source:
 git clone https://github.com/coolthor/musubi.git
 cd musubi
 uv tool install .           # or: pip install .
+
+musubi init                 # interactive setup wizard
 ```
+
+The setup wizard checks your environment, lets you try the bundled demo
+or point at your own notes, and walks you through custom concepts and
+cron setup — all in under a minute.
 
 ### Optional: qmd integration
 
