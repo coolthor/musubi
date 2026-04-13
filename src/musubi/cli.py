@@ -50,12 +50,65 @@ def _node_label(node: dict[str, Any]) -> str:
     return f"[{coll}] {title}  {c(path, 'dim')}"
 
 
-def _load_graph_or_exit(cfg: Config) -> Graph:
+def _is_stale(cfg: Config) -> bool:
+    """Check if the graph is older than source data or older than 24 hours."""
+    if not cfg.graph_path.exists():
+        return True
+
+    graph_mtime = cfg.graph_path.stat().st_mtime
+    graph_age_h = (datetime.now(timezone.utc).timestamp() - graph_mtime) / 3600
+
+    if graph_age_h > 24:
+        return True
+    if cfg.qmd_db.exists() and cfg.qmd_db.stat().st_mtime > graph_mtime:
+        return True
+    return False
+
+
+def _auto_rebuild_if_stale(cfg: Config) -> None:
+    """Automatically rebuild the graph if it's stale.
+
+    This replaces the need for cron — the graph stays fresh lazily.
+    Rebuild only happens when you actually query, not on a schedule.
+    """
+    if not _is_stale(cfg):
+        return
+
+    age_str = ""
+    if cfg.graph_path.exists():
+        age_h = (datetime.now(timezone.utc).timestamp() - cfg.graph_path.stat().st_mtime) / 3600
+        age_str = f" ({age_h:.0f}h old)" if age_h < 48 else f" ({age_h / 24:.0f}d old)"
+
+    print(
+        c(f"  ↻ graph is stale{age_str}, auto-rebuilding...", "yellow"),
+        file=sys.stderr,
+    )
+
+    from musubi.builder import build as do_build
+
     try:
-        return Graph.load(cfg.graph_path)
+        summary = do_build(cfg, verbose=False)
+        n = summary["nodes"]
+        e = summary["concept_edges"] + summary.get("embedding_edges", 0)
+        print(
+            c(f"  ✓ rebuilt: {n} docs, {e} edges", "green"),
+            file=sys.stderr,
+        )
+    except Exception as ex:
+        print(
+            c(f"  ⚠️ auto-rebuild failed: {ex}. Using stale graph.", "yellow"),
+            file=sys.stderr,
+        )
+
+
+def _load_graph_or_exit(cfg: Config) -> Graph:
+    _auto_rebuild_if_stale(cfg)
+    try:
+        g = Graph.load(cfg.graph_path)
     except (FileNotFoundError, ValueError) as e:
         print(c(str(e), "red"), file=sys.stderr)
         sys.exit(1)
+    return g
 
 
 # ---------- commands ----------
