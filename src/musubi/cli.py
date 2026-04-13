@@ -51,7 +51,17 @@ def _node_label(node: dict[str, Any]) -> str:
 
 
 def _is_stale(cfg: Config) -> bool:
-    """Check if the graph is older than source data or older than 24 hours."""
+    """Check if the graph is older than source data or older than 24 hours.
+
+    Checks three sources of freshness:
+    1. Graph age (> 24h = stale)
+    2. qmd sqlite index mtime (re-indexed since last build = stale)
+    3. MUSUBI_WATCH_DIRS directories (any .md newer than graph = stale)
+
+    MUSUBI_WATCH_DIRS is a colon-separated list of directories to monitor
+    for new/modified .md files. Useful for auto-memory directories or other
+    note sources that aren't tracked by qmd.
+    """
     if not cfg.graph_path.exists():
         return True
 
@@ -62,6 +72,21 @@ def _is_stale(cfg: Config) -> bool:
         return True
     if cfg.qmd_db.exists() and cfg.qmd_db.stat().st_mtime > graph_mtime:
         return True
+
+    # Check watched directories for new .md files
+    from pathlib import Path as _P
+    watch_dirs = os.environ.get("MUSUBI_WATCH_DIRS", "")
+    for d in watch_dirs.split(":"):
+        d = d.strip()
+        if not d:
+            continue
+        watch = _P(os.path.expanduser(d))
+        if not watch.is_dir():
+            continue
+        for md in watch.rglob("*.md"):
+            if md.stat().st_mtime > graph_mtime:
+                return True
+
     return False
 
 

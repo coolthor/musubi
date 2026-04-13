@@ -18,6 +18,11 @@ MUSUBI_CONCEPTS_FILE  Optional extra concept list (one term per line, # for
                       Default: ~/.config/musubi/concepts.txt if present.
 MUSUBI_LOG_DIR        Where musubi writes its own logs (regen, etc.).
                       Default: ~/.local/state/musubi/
+MUSUBI_WATCH_DIRS     Colon-separated list of directories to monitor for
+                      freshness. If any .md file in these dirs is newer than
+                      the graph, auto-rebuild triggers on next query. Useful
+                      for auto-memory directories or note sources outside qmd.
+                      Default: none.
 """
 from __future__ import annotations
 
