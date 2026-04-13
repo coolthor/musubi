@@ -294,10 +294,10 @@ defaults mean you don't need to set anything:
 
 ---
 
-## Try it yourself
+## Try it yourself (demo)
 
-The repo includes 20 demo notes across 5 domains (LLM inference,
-web dev, DevOps, AI agents, general). Build and explore in 30 seconds:
+The repo includes 20 demo notes across 5 domains. Build and explore
+in 30 seconds:
 
 ```bash
 git clone https://github.com/coolthor/musubi.git
@@ -311,6 +311,126 @@ musubi cold
 
 The [interactive graph visualization](assets/demo-graph.html) can be
 opened in any browser after building.
+
+---
+
+## Use it on your own notes
+
+Done with the demo? Here's how to switch to your actual notes.
+
+### Step 1: Point at your notes directory
+
+```bash
+musubi build --source ~/path/to/your/notes/
+```
+
+Musubi recursively finds all `*.md` and `*.mdx` files. Subdirectories
+become **collections** (shown as `[inference]`, `[devops]`, etc. in
+output). If all files are at the root level, they go into a `default`
+collection.
+
+**Works with any markdown notes system** — Obsidian vaults, Logseq
+directories, Dendron workspaces, or just a folder of `.md` files.
+
+### Step 2: Check what you got
+
+```bash
+musubi stats       # how many nodes, edges, isolated docs?
+musubi cold        # anything gone stale?
+```
+
+If `musubi cold` shows a lot of ❄ isolated nodes, your notes probably
+use domain-specific vocabulary that isn't in the default concept
+dictionary. That's normal — go to Step 3.
+
+### Step 3: Add your vocabulary (optional but recommended)
+
+Create a concepts file with terms specific to your work:
+
+```bash
+mkdir -p ~/.config/musubi
+
+cat > ~/.config/musubi/concepts.txt << 'EOF'
+# My domain vocabulary
+# One term per line. Lines starting with # are comments.
+
+# example: if you work in finance
+black-scholes
+portfolio rebalancing
+sharpe ratio
+
+# example: your internal tools
+my-internal-api
+staging-cluster
+deployment-pipeline
+
+# example: your tech stack
+fastapi
+celery
+rabbitmq
+EOF
+```
+
+Then rebuild:
+
+```bash
+musubi build --source ~/path/to/your/notes/
+musubi stats    # edges and avg degree should increase
+musubi cold     # fewer isolated nodes
+```
+
+**Tip:** Look at the `top concepts` in `musubi stats`. If the top
+concepts are too generic (like "the", "api", "code"), they're acting as
+stopwords and connecting everything to everything. Remove overly generic
+terms from your concepts file. If important domain terms are missing,
+add them.
+
+### Step 4: Set up auto-rebuild (optional)
+
+Once you're happy with the graph, schedule a weekly rebuild so it
+stays fresh as you add new notes:
+
+```cron
+# every Sunday at 02:17: rebuild graph from latest notes
+17 2 * * 0 musubi build --source ~/notes/ >> /tmp/musubi-weekly.log 2>&1
+```
+
+### Directory structure tips
+
+```
+# Good: subdirectories become meaningful collections
+~/notes/
+├── projects/          → [projects] collection
+│   ├── api-redesign.md
+│   └── mobile-app.md
+├── debugging/         → [debugging] collection
+│   ├── postgres-oom.md
+│   └── redis-timeout.md
+└── learning/          → [learning] collection
+    ├── rust-ownership.md
+    └── k8s-networking.md
+
+# Also fine: flat directory → all in [default] collection
+~/notes/
+├── api-redesign.md
+├── postgres-oom.md
+└── rust-ownership.md
+```
+
+### Common questions
+
+**Q: How many notes do I need for the graph to be useful?**
+A: 30+. Below that, most notes are isolated. Above 100, you start
+getting rich cross-domain connections that surprise you.
+
+**Q: Can I point at multiple directories?**
+A: Not yet in a single command. Workaround: symlink them under one
+parent directory, or use [qmd](https://www.npmjs.com/package/@tobilu/qmd)
+which supports multiple named collections.
+
+**Q: Will it modify my markdown files?**
+A: No. Musubi is strictly read-only. It reads your files, builds a
+separate `graph.json`, and never touches the source.
 
 ---
 
