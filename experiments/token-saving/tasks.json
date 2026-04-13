@@ -1,0 +1,72 @@
+[
+  {
+    "id": "direct-1",
+    "type": "direct_lookup",
+    "query": "I wrote a note about FP8 KV cache causing repeated output. Find it.",
+    "expected_file": "inference/vllm-fp8-kvcache-bug.md",
+    "description": "Direct keyword match — baseline should find this easily"
+  },
+  {
+    "id": "direct-2",
+    "type": "direct_lookup",
+    "query": "Find my notes comparing Ollama and vLLM performance.",
+    "expected_file": "inference/ollama-vs-vllm-benchmark.md",
+    "description": "Direct keyword match with multiple relevant terms"
+  },
+  {
+    "id": "direct-3",
+    "type": "direct_lookup",
+    "query": "I have a cheat sheet about quantization formats somewhere. Which file?",
+    "expected_file": "inference/quantization-formats-explained.md",
+    "description": "Slightly fuzzy — 'cheat sheet' vs actual title wording"
+  },
+  {
+    "id": "cross-1",
+    "type": "cross_domain",
+    "query": "I'm debugging a GPU out-of-memory issue with vLLM. Any notes that might help?",
+    "expected_files": ["devops/docker-gpu-oom-debugging.md", "inference/ollama-vs-vllm-benchmark.md"],
+    "description": "Cross-domain: devops OOM note is relevant but uses 'Docker' not 'vLLM' in title"
+  },
+  {
+    "id": "cross-2",
+    "type": "cross_domain",
+    "query": "I'm setting up a new deployment and want to avoid SEO mistakes. What do I know?",
+    "expected_files": ["webdev/vercel-domain-redirect-seo.md", "webdev/nextjs-hreflang-canonical-split.md"],
+    "description": "Cross-domain: deployment (devops) + SEO (webdev) — needs to bridge two collections"
+  },
+  {
+    "id": "cross-3",
+    "type": "cross_domain",
+    "query": "Is there anything about memory management? Could be GPU memory or AI agent memory.",
+    "expected_files": ["devops/docker-gpu-oom-debugging.md", "agents/agent-memory-persistence.md"],
+    "description": "Ambiguous 'memory' — spans two completely different domains"
+  },
+  {
+    "id": "explore-1",
+    "type": "exploration",
+    "query": "What notes are related to my vLLM FP8 KV cache bug? Show me the neighborhood.",
+    "expected_neighbors": ["inference/quantization-formats-explained.md", "inference/ollama-vs-vllm-benchmark.md"],
+    "description": "Explicit neighbor request — musubi's core strength"
+  },
+  {
+    "id": "explore-2",
+    "type": "exploration",
+    "query": "I want to understand the full picture around inference optimization. What notes connect to each other?",
+    "expected_cluster": "inference",
+    "description": "Cluster exploration — wants to see how inference notes relate"
+  },
+  {
+    "id": "health-1",
+    "type": "health_check",
+    "query": "Which of my notes are isolated or might be going stale?",
+    "expected_tool": "musubi cold",
+    "description": "Health check — only musubi can answer this directly"
+  },
+  {
+    "id": "health-2",
+    "type": "health_check",
+    "query": "Give me an overview of my knowledge base. What are the main topic clusters?",
+    "expected_tool": "musubi stats",
+    "description": "Stats overview — only musubi provides this view"
+  }
+]
