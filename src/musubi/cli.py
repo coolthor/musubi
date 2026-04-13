@@ -73,8 +73,25 @@ def _is_stale(cfg: Config) -> bool:
     if cfg.qmd_db.exists() and cfg.qmd_db.stat().st_mtime > graph_mtime:
         return True
 
-    # Check watched directories for new .md files
+    # Check the original source directory (stored in graph metadata).
+    # This handles filesystem-mode users who don't have qmd.
+    # Only read the first 1KB to extract "source" without parsing the full graph.
     from pathlib import Path as _P
+    try:
+        head = cfg.graph_path.read_text(encoding="utf-8")[:1024]
+        import re as _re
+        m = _re.search(r'"source"\s*:\s*"([^"]+)"', head)
+        src = m.group(1) if m else ""
+        if src and src != "qmd":
+            src_dir = _P(os.path.expanduser(src))
+            if src_dir.is_dir():
+                for md in src_dir.rglob("*.md"):
+                    if md.stat().st_mtime > graph_mtime:
+                        return True
+    except Exception:
+        pass
+
+    # Check additional watched directories
     watch_dirs = os.environ.get("MUSUBI_WATCH_DIRS", "")
     for d in watch_dirs.split(":"):
         d = d.strip()
@@ -104,15 +121,32 @@ def _auto_rebuild_if_stale(cfg: Config) -> None:
         age_h = (datetime.now(timezone.utc).timestamp() - cfg.graph_path.stat().st_mtime) / 3600
         age_str = f" ({age_h:.0f}h old)" if age_h < 48 else f" ({age_h / 24:.0f}d old)"
 
+    # Read the original source from graph metadata so we rebuild from
+    # the same place (filesystem dir vs qmd).
+    source_dir = None
+    try:
+        import re as _re
+        head = cfg.graph_path.read_text(encoding="utf-8")[:1024]
+        m = _re.search(r'"source"\s*:\s*"([^"]+)"', head)
+        src = m.group(1) if m else ""
+        if src and src != "qmd":
+            from pathlib import Path as _P
+            candidate = _P(os.path.expanduser(src))
+            if candidate.is_dir():
+                source_dir = candidate
+    except Exception:
+        pass
+
+    source_label = str(source_dir) if source_dir else "qmd"
     print(
-        c(f"  ↻ graph is stale{age_str}, auto-rebuilding...", "yellow"),
+        c(f"  ↻ graph is stale{age_str}, auto-rebuilding from {source_label}...", "yellow"),
         file=sys.stderr,
     )
 
     from musubi.builder import build as do_build
 
     try:
-        summary = do_build(cfg, verbose=False)
+        summary = do_build(cfg, source=source_dir, verbose=False)
         n = summary["nodes"]
         e = summary["concept_edges"] + summary.get("embedding_edges", 0)
         print(

@@ -467,6 +467,7 @@ def build(
     data["graph"]["built_at"] = datetime.now(timezone.utc).isoformat()
     data["graph"]["version"] = "musubi-0.2"
     data["graph"]["edge_weighting"] = "idf"
+    data["graph"]["source"] = str(source) if source else "qmd"
     with cfg.graph_path.open("w") as f:
         json.dump(data, f, ensure_ascii=False)
     log(f"  wrote: {cfg.graph_path}")
