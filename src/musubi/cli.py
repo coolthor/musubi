@@ -308,6 +308,11 @@ def cmd_path(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def cmd_init(args: argparse.Namespace, _cfg: Config | None) -> int:
+    from musubi.init_wizard import run_init
+    return run_init()
+
+
 def cmd_build(args: argparse.Namespace, cfg: Config) -> int:
     from pathlib import Path as _Path
 
@@ -397,10 +402,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     pb.set_defaults(func=cmd_build)
 
+    pi = sub.add_parser("init", help="interactive setup wizard (demo → your notes)")
+    pi.set_defaults(func=cmd_init)
+
     args = p.parse_args(argv)
     if not getattr(args, "command", None):
         p.print_help()
         return 1
+
+    # init doesn't need a pre-existing graph or config
+    if args.command == "init":
+        return args.func(args, None)
 
     cfg = load_config()
     return args.func(args, cfg)

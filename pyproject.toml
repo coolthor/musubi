@@ -41,6 +41,9 @@ Issues = "https://github.com/coolthor/musubi/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/musubi"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"examples/demo-notes" = "musubi/demo-notes"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
