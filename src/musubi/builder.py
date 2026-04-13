@@ -295,7 +295,7 @@ def _build_graph(docs, doc_concepts, hash_embeddings):
               + (f" +{len(stop_concepts) - 8} more" if len(stop_concepts) > 8 else ""))
 
     edge_data: dict[tuple[Any, Any], dict[str, Any]] = defaultdict(
-        lambda: {"idf_weight": 0.0, "shared": []}
+        lambda: {"idf_weight": 0.0, "shared": [], "shared_count": 0}
     )
     for concept, idf in concept_idf.items():
         doc_ids = concept_to_docs[concept]
@@ -305,6 +305,7 @@ def _build_graph(docs, doc_concepts, hash_embeddings):
                 a = min(doc_list[i], doc_list[j])
                 b = max(doc_list[i], doc_list[j])
                 edge_data[(a, b)]["idf_weight"] += idf
+                edge_data[(a, b)]["shared_count"] += 1
                 if len(edge_data[(a, b)]["shared"]) < 6:
                     edge_data[(a, b)]["shared"].append(concept)
 
@@ -312,17 +313,25 @@ def _build_graph(docs, doc_concepts, hash_embeddings):
     for data in edge_data.values():
         data["shared"].sort(key=lambda c: concept_idf.get(c, 0), reverse=True)
 
-    # Edge threshold: IDF-weighted sum must exceed this to create an edge.
-    # With IDF weighting, a single rare concept (appearing in <5% of docs)
-    # has IDF ≈ 3.0-5.0, while common ones (>20% of docs) have IDF < 1.6.
-    # Threshold 4.0 means: need either one very rare shared concept OR
-    # two moderately specific ones. This prevents "everything connects to
-    # everything" while keeping genuine cross-topic links.
-    edge_threshold = 4.0
+    # Edge admission: BOTH conditions must be met (dual gate).
+    #
+    # 1. min_shared_concepts: at least 2 distinct concepts must be shared.
+    #    This preserves the "corroboration" safety net from the old system —
+    #    a single rare concept alone is not enough evidence of relatedness.
+    #
+    # 2. idf_threshold: the IDF-weighted sum must exceed 4.0.
+    #    This ensures the shared concepts are actually specific, not just
+    #    two generic terms that happen to co-occur.
+    #
+    # Together: "share at least 2 concepts, AND those concepts must be
+    # specific enough to carry information." This addresses the Codex
+    # critique that IDF-only removed the corroboration requirement.
+    min_shared_concepts = 2
+    idf_threshold = 4.0
 
     concept_edges = 0
     for (a, b), data in edge_data.items():
-        if data["idf_weight"] >= edge_threshold:
+        if data["shared_count"] >= min_shared_concepts and data["idf_weight"] >= idf_threshold:
             G.add_edge(
                 a,
                 b,
