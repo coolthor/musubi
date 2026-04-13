@@ -72,12 +72,15 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
 # ---------------------------------------------------------------------------
 
 
+MAX_FILE_BYTES = 1_000_000  # 1 MB — skip files larger than this
+
+
 def _read_fs_documents(root: Path) -> list[dict[str, Any]]:
     """Recursively read *.md / *.mdx from a directory tree.
 
     Each document gets a synthetic integer id and a collection name derived
     from the first subdirectory under root (or "default" if files live at
-    root level).
+    root level). Files larger than 1 MB are skipped with a warning.
     """
     docs: list[dict[str, Any]] = []
     md_files = sorted(root.rglob("*.md")) + sorted(root.rglob("*.mdx"))
@@ -87,9 +90,17 @@ def _read_fs_documents(root: Path) -> list[dict[str, Any]]:
         collection = parts[0] if len(parts) > 1 else "default"
 
         stat = filepath.stat()
+        if stat.st_size > MAX_FILE_BYTES:
+            print(f"  skipping {rel} ({stat.st_size / 1e6:.1f} MB > 1 MB limit)")
+            continue
+
         modified_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
 
-        text = filepath.read_text(encoding="utf-8", errors="replace")
+        try:
+            text = filepath.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            print(f"  skipping {rel} (not valid UTF-8)")
+            continue
         meta, body = _parse_frontmatter(text)
 
         title = meta.get("title") or filepath.stem

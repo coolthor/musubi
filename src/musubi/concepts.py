@@ -96,7 +96,16 @@ DEFAULT_PATH_CONCEPTS: dict[str, set[str]] = {
 
 def _parse_concept_file(path: Path) -> set[str]:
     concepts: set[str] = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        import sys
+        print(
+            f"Warning: {path} is not valid UTF-8, skipping user concepts",
+            file=sys.stderr,
+        )
+        return concepts
+    for line in text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue

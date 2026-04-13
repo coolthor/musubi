@@ -45,8 +45,15 @@ from typing import Any
 DEMO_NOTES = Path(__file__).parent.parent / "demo-notes"
 TASKS_FILE = Path(__file__).parent / "tasks.json"
 RESULTS_DIR = Path(__file__).parent / "results"
-MODEL = "claude-sonnet-4-20250514"
+_MODEL = "claude-sonnet-4-20250514"
 MAX_TURNS = 10
+# Defined as a mutable container so main() can update it without `global`
+MODEL = _MODEL
+
+
+def _update_model(m: str) -> None:
+    global MODEL
+    MODEL = m
 
 # ---------- Tool definitions ----------
 
@@ -147,17 +154,21 @@ def _run(cmd: list[str], cwd: Path | None = None) -> str:
 def execute_tool(name: str, args: dict[str, Any], notes_dir: Path) -> str:
     """Execute a tool call and return the string result."""
     if name == "search_files":
-        return _run(["grep", "-rl", "--include=*.md", args["query"], str(notes_dir)])
+        # `--` prevents option injection from query strings starting with `-`
+        return _run(["grep", "-rl", "--include=*.md", "--", args["query"], str(notes_dir)])
 
     if name == "list_files":
         files = sorted(notes_dir.rglob("*.md"))
         return "\n".join(str(f.relative_to(notes_dir)) for f in files)
 
     if name == "read_file":
-        path = notes_dir / args["path"]
+        path = (notes_dir / args["path"]).resolve()
+        # Prevent path traversal (e.g. ../../.ssh/config)
+        if not path.is_relative_to(notes_dir.resolve()):
+            return f"Access denied: path escapes notes directory"
         if not path.exists():
             return f"File not found: {args['path']}"
-        return path.read_text(encoding="utf-8")[:3000]
+        return path.read_text(encoding="utf-8", errors="replace")[:3000]
 
     if name == "musubi_search":
         return _run(["musubi", "search", args["query"], "--limit", "8"])
@@ -375,8 +386,8 @@ def main() -> int:
     p.add_argument("--model", default=MODEL, help="Claude model to use")
     args = p.parse_args()
 
-    global MODEL
-    MODEL = args.model
+    # Update the module-level MODEL so run_conversation picks it up
+    _update_model(args.model)
     notes_dir = Path(args.notes)
 
     if not notes_dir.is_dir():

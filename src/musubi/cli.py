@@ -53,7 +53,7 @@ def _node_label(node: dict[str, Any]) -> str:
 def _load_graph_or_exit(cfg: Config) -> Graph:
     try:
         return Graph.load(cfg.graph_path)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError) as e:
         print(c(str(e), "red"), file=sys.stderr)
         sys.exit(1)
 
@@ -316,20 +316,20 @@ def cmd_init(args: argparse.Namespace, _cfg: Config | None) -> int:
 def cmd_benchmark(args: argparse.Namespace, _cfg: Config | None) -> int:
     """Run the token saving benchmark using the experiment script."""
     import importlib.resources
+    from pathlib import Path as _Path
 
     # Find the experiment script
     exp_script = None
-    # Check package data
+    # 1. Check bundled package data (pip/uv install)
     try:
-        pkg = importlib.resources.files("musubi")
-        candidate = Path(str(pkg)).parent.parent / "experiments" / "token-saving" / "run_experiment.py"
-        if candidate.exists():
-            exp_script = candidate
+        pkg_path = _Path(str(importlib.resources.files("musubi") / "benchmark" / "run_experiment.py"))
+        if pkg_path.exists():
+            exp_script = pkg_path
     except (TypeError, FileNotFoundError):
         pass
-    # Check relative to source (dev install)
+    # 2. Check relative to source tree (development / editable install)
     if exp_script is None:
-        dev = Path(__file__).parent.parent.parent / "experiments" / "token-saving" / "run_experiment.py"
+        dev = _Path(__file__).parent.parent.parent / "experiments" / "token-saving" / "run_experiment.py"
         if dev.exists():
             exp_script = dev
 

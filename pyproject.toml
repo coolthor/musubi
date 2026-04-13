@@ -43,6 +43,7 @@ packages = ["src/musubi"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "examples/demo-notes" = "musubi/demo-notes"
+"experiments/token-saving" = "musubi/benchmark"
 
 [tool.ruff]
 line-length = 100

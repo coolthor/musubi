@@ -37,8 +37,15 @@ class Graph:
                 f"Graph file not found: {path}\n"
                 f"Run `musubi build` to create it, or set MUSUBI_GRAPH_PATH."
             )
-        with path.open() as f:
-            raw = json.load(f)
+        try:
+            with path.open() as f:
+                raw = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Graph file is corrupted: {path}\n"
+                f"  {e}\n"
+                f"Delete it and rebuild: musubi build"
+            ) from e
 
         nodes = raw.get("nodes", [])
         edges = raw.get("edges", [])
@@ -80,21 +87,44 @@ class Graph:
     def resolve(self, query: str) -> list[Any]:
         """Resolve a query string to one or more doc node IDs.
 
-        Priority: exact int id → exact path → path substring → title substring.
+        Priority: exact int id → exact path → exact basename → path suffix
+        match → path substring → title substring. Each tier is tried only
+        if the previous one returned nothing. Within a tier, all matches
+        are returned (the caller decides how to handle ambiguity).
         """
+        # 1. Exact numeric id
         if query.isdigit():
             nid = int(query)
             if nid in self.id_to_node:
                 return [nid]
 
+        # 2. Exact full path
         if query in self.path_to_id:
             return [self.path_to_id[query]]
 
         ql = query.lower()
+
+        # 3. Exact basename match (e.g. "vllm-fp8-kvcache-bug.md")
+        basename_hits = [
+            nid for p, nid in self.path_to_id.items()
+            if os.path.basename(p).lower() == ql
+            or os.path.splitext(os.path.basename(p))[0].lower() == ql
+        ]
+        if basename_hits:
+            return basename_hits
+
+        # 4. Path ends with query (e.g. "inference/vllm-fp8" matches
+        #    "inference/vllm-fp8-kvcache-bug.md" but NOT "other/vllm-fp8-note.md")
+        suffix_hits = [nid for p, nid in self.path_to_id.items() if p.lower().endswith(ql)]
+        if suffix_hits:
+            return suffix_hits
+
+        # 5. Path substring (broadest, may be ambiguous)
         path_hits = [nid for p, nid in self.path_to_id.items() if ql in p.lower()]
         if path_hits:
             return path_hits
 
+        # 6. Title substring
         return [nid for t, nid in self.title_to_id.items() if ql in t.lower()]
 
     def neighbors_of(self, node_id: Any, limit: int = 10) -> list[dict[str, Any]]:
@@ -109,22 +139,25 @@ class Graph:
 
     @staticmethod
     def match_qmd_uri(file_field: str, path_to_id: dict[str, Any]) -> Any | None:
-        """Map a qmd-style `qmd://<collection>/<path>` URI to a node id.
+        """Map a qmd-style ``qmd://<collection>/<path>`` URI to a node id.
 
-        Falls back to basename match if the full relative path isn't in
-        the graph (handles the case where qmd stores collection-prefixed
-        paths while the graph stores collection-relative ones).
+        Falls back to basename match only if the match is **unique**. If
+        multiple graph nodes share the same basename, returns ``None``
+        rather than guessing (caller can log a warning).
         """
         import re
 
         m = re.match(r"qmd://[^/]+/(.+)$", file_field)
         rel = m.group(1) if m else file_field
+
+        # 1. Exact relative-path match
         nid = path_to_id.get(rel)
         if nid is not None:
             return nid
 
+        # 2. Unique basename match (skip if ambiguous)
         base = os.path.basename(rel)
-        for gp, gnid in path_to_id.items():
-            if os.path.basename(gp) == base:
-                return gnid
+        candidates = [gnid for gp, gnid in path_to_id.items() if os.path.basename(gp) == base]
+        if len(candidates) == 1:
+            return candidates[0]
         return None

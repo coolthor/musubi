@@ -353,39 +353,51 @@ def _setup_concepts() -> None:
 
 def _setup_cron(notes_dir: Path) -> None:
     """Add a crontab entry for weekly rebuild (filesystem mode)."""
-    musubi_bin = shutil.which("musubi") or "musubi"
-    entry = f'17 2 * * 0 {musubi_bin} build --source {notes_dir} >> /tmp/musubi-weekly.log 2>&1'
+    import shlex
+
+    musubi_bin = shlex.quote(shutil.which("musubi") or "musubi")
+    source_path = shlex.quote(str(notes_dir))
+    entry = f'17 2 * * 0 {musubi_bin} build --source {source_path} >> /tmp/musubi-weekly.log 2>&1'
     _add_cron_entry(entry)
 
 
 def _setup_cron_qmd() -> None:
     """Add a crontab entry for weekly rebuild (qmd mode)."""
-    musubi_bin = shutil.which("musubi") or "musubi"
-    qmd_bin = shutil.which("qmd") or "qmd"
+    import shlex
+
+    musubi_bin = shlex.quote(shutil.which("musubi") or "musubi")
+    qmd_bin = shlex.quote(shutil.which("qmd") or "qmd")
     entry = f'17 2 * * 0 {qmd_bin} update > /tmp/musubi-weekly.log 2>&1 && {musubi_bin} build >> /tmp/musubi-weekly.log 2>&1'
     _add_cron_entry(entry)
+
+
+# Marker for idempotent crontab management
+_CRON_MARKER = "# musubi-auto-rebuild"
 
 
 def _add_cron_entry(entry: str) -> None:
     """Append a cron entry if it doesn't already exist."""
     if platform.system() == "Windows":
         print(c("    Cron is not available on Windows.", "yellow"))
-        print(c(f"    Use Task Scheduler with: {entry.split('0 ', 1)[-1]}", "dim"))
+        print(c("    Use Task Scheduler to schedule the equivalent command.", "dim"))
         return
 
     try:
-        existing = subprocess.run(
+        result = subprocess.run(
             ["crontab", "-l"], capture_output=True, text=True
-        ).stdout
+        )
     except FileNotFoundError:
         print(c("    crontab not found.", "yellow"))
         return
 
-    if "musubi" in existing:
+    # crontab -l returns exit 1 when no crontab is set — that's OK
+    existing = result.stdout if result.returncode == 0 else ""
+
+    if _CRON_MARKER in existing:
         print(c("    Crontab already has a musubi entry. Skipping.", "dim"))
         return
 
-    new_crontab = existing.rstrip("\n") + f"\n\n# musubi weekly graph rebuild\n{entry}\n"
+    new_crontab = existing.rstrip("\n") + f"\n\n{_CRON_MARKER}\n{entry}\n"
     proc = subprocess.run(
         ["crontab", "-"], input=new_crontab, text=True, capture_output=True
     )
