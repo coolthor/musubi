@@ -43,7 +43,7 @@ Musubi 掃描一個資料夾裡的 Markdown 檔案，從每篇文件中提取技
 | `musubi stats` | 知識圖譜有多大？hub 節點是誰？ |
 | `musubi neighbors <doc>` | 哪些筆記跟這篇相關？ |
 | `musubi cold` | 哪些筆記已經冷掉、失去連結？ |
-| `musubi search <query>` | 搜尋 + 顯示圖譜擴展的鄰居 |
+| `musubi search <query>` | 搜尋 + 圖譜擴展 + 品質 badge（[信心度 + 過時偵測](#記憶品質信心度--過時偵測)） |
 | `musubi benchmark` | 測量 musubi 幫你省了多少 token |
 
 不需要 server。不需要資料庫。不需要 API key。只需要 Markdown 檔案和一個 CLI。
@@ -142,6 +142,59 @@ musubi cold --limit 20               # 什麼冷掉了？
 Keyword search 搜 "benchmark" 永遠不會回傳一篇 devops debug 筆記。
 
 **這就是旁徵博引 — 跨領域的關聯自動浮現，不需要你記得每篇筆記寫過什麼。**
+
+---
+
+## 記憶品質：信心度 + 過時偵測
+
+搜尋到「對」的筆記不代表筆記本身是對的。可能是寫的時候就寫錯了，
+也可能是筆記還在，但它描述的程式碼早就改了。Musubi 加了兩個輕量訊號，
+讓未來的你（或你的 LLM 助手）能一眼看出：哪些結論是驗證過的、
+哪些是推測、哪些指向的程式碼已經不一樣了。
+
+### Confidence tag（信心度標記）
+
+在任何筆記的 frontmatter 加一個 `confidence:` 欄位：
+
+```yaml
+---
+title: Redis connection churn — root cause
+confidence: verified
+verified_by: "production logs + /metrics 可重現"
+---
+```
+
+三種等級：`verified`（你驗過了）、`hypothesis`（目前的推測）、
+`superseded`（後來發現是錯的 — 加 `superseded_by: 指向正解的.md`
+讓讀者追得到脈絡）。沒標的筆記就維持沒標，不強迫遷移。
+
+### Staleness detection（過時偵測）
+
+Musubi 會自動掃筆記裡提到的檔案路徑（`/Users/...`、`~/...` 開頭）。
+搜尋時，`stat()` 每個路徑的 mtime 跟筆記本身的 mtime 比對。
+如果被引用的檔案比筆記新 → 標 `⚠ stale`，代表原始碼已經改過、
+筆記可能跟不上了。
+
+```
+◇ Musubi search: redis singleton churn
+
+  ★ 1.000  [bps-api] Redis Connection Churn ⚠ stale (1 src newer)
+            [verified ✓]  docs/experience-2026-03-01-...md
+  + 0.671  [bps-api] Service Layer Performance Audit (Codex)
+```
+
+不存在的檔案、目錄、`/dev/null` 都會被過濾 — 只有 regular file 算數。
+
+### 為什麼要這個
+
+一篇錯的筆記可以毀掉好幾天的工作。真實案例：有一份「35 步成功」的
+推測筆記沒驗 exit status，隔天被當成事實相信，花了一整天追一個
+假前提。如果當時筆記有 `confidence: hypothesis`，下次搜尋時 badge
+會明擺著寫在標題旁邊。如果有 staleness，當 trajectory 被覆寫後，
+任何引用它的筆記都會自動標 stale。
+
+兩個訊號都會出現在 `musubi search`、`musubi neighbors` 和 MCP 工具輸出。
+沒標的筆記行為完全不變。
 
 ---
 

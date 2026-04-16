@@ -45,7 +45,7 @@ The result is a JSON graph you can query instantly from the command line:
 | `musubi stats` | "How big is my knowledge graph? What are the hubs?" |
 | `musubi neighbors <doc>` | "What other notes are related to this one?" |
 | `musubi cold` | "Which notes have gone stale and lost connections?" |
-| `musubi search <query>` | Search + show graph-expanded neighbors |
+| `musubi search <query>` | Search + graph-expanded neighbors + quality badges ([confidence + staleness](#memory-quality-confidence--staleness)) |
 | `musubi benchmark` | Measure how many tokens musubi saves you ([details](#measure-your-token-savings)) |
 
 No servers. No databases. No API keys. Just markdown files and a CLI.
@@ -208,6 +208,65 @@ Keyword search for "benchmark" would never return a devops debugging note.
 The ❄ marker flags isolated nodes (degree = 0). These docs don't share
 enough concepts with anything else — either they need richer vocabulary,
 or they're genuinely standalone topics.
+
+---
+
+## Memory quality: confidence + staleness
+
+Graph search can surface the *right* document and still mislead you —
+because the document itself was wrong, or because the code it described
+has since changed. Musubi adds two lightweight signals so future-you
+(or your LLM assistant) can tell a verified finding from an unverified
+hypothesis, and can see when a note points at code that has moved on.
+
+### Confidence tag
+
+Add a `confidence:` field to any note's frontmatter:
+
+```yaml
+---
+title: Redis connection churn — root cause
+confidence: verified
+verified_by: "production logs + /metrics reproduce"
+---
+```
+
+Three levels: `verified` (you checked), `hypothesis` (best guess so
+far), `superseded` (later work proved it wrong — add
+`superseded_by: path/to/correction.md` so readers can follow the
+trail). Untagged notes stay untagged — no forced migration.
+
+### Staleness detection
+
+Musubi scans every note for referenced filesystem paths
+(`/Users/...`, `~/...` style). At search time, it `stat`s those
+paths and compares their mtime to the note's own mtime. If a
+referenced file is newer than the note, the note is flagged
+`⚠ stale` — the source code has moved on, the note may not have.
+
+```
+◇ Musubi search: redis singleton churn
+
+  ★ 1.000  [bps-api] Redis Connection Churn ⚠ stale (1 src newer)
+            [verified ✓]  docs/experience-2026-03-01-...md
+  + 0.671  [bps-api] Service Layer Performance Audit (Codex)
+```
+
+Missing files, directories, and `/dev/null` are filtered out — only
+regular-file mtimes count.
+
+### Why it matters
+
+One bad note can poison days of work. An earlier incident: a
+"35-step success" hypothesis was written without verifying the exit
+status, then trusted the next day as fact — a full day was lost
+chasing its false premise. With `confidence: hypothesis`, the next
+search would have shown the caveat next to the title. With staleness,
+a note that referenced the trajectory file would have flagged stale
+once the file was overwritten.
+
+Both signals are visible in `musubi search`, `musubi neighbors`, and
+the MCP tool output. Untagged notes behave exactly as before.
 
 ---
 
