@@ -38,6 +38,38 @@ from musubi.config import Config
 
 
 # ---------------------------------------------------------------------------
+# Referenced path extraction (for staleness detection)
+# ---------------------------------------------------------------------------
+
+
+# Matches absolute paths (/Users/..., /home/..., /tmp/...) and home-anchored
+# paths (~/...). Rejects URL path fragments by requiring the path NOT be
+# preceded by another word char, slash, or colon — so `https://x.com/y/z`
+# won't match `/y/z` (preceded by `m`).
+_REFERENCED_PATH_RE = re.compile(
+    r"(?<![:\w/])"
+    r"(?:~/|/)"                     # anchor: ~/ or /
+    r"[A-Za-z0-9_.\-]+"             # first named segment
+    r"(?:/[A-Za-z0-9_.\-]+)+"       # at least one more segment
+)
+
+
+def _extract_referenced_paths(text: str) -> list[str]:
+    """Extract absolute / home-anchored filesystem paths from note body.
+
+    Returns a de-duplicated list, preserving first-seen order. Used at
+    search time to check whether any referenced file has been modified
+    after the note itself (staleness detection).
+    """
+    seen: dict[str, None] = {}
+    for match in _REFERENCED_PATH_RE.finditer(text):
+        path = match.group(0)
+        if path not in seen:
+            seen[path] = None
+    return list(seen.keys())
+
+
+# ---------------------------------------------------------------------------
 # Frontmatter parser (stdlib-only, no pyyaml dependency)
 # ---------------------------------------------------------------------------
 
@@ -110,6 +142,10 @@ def _read_fs_documents(root: Path) -> list[dict[str, Any]]:
             "path": str(rel),
             "title": title,
             "modified_at": modified_at,
+            "confidence": meta.get("confidence"),
+            "verified_by": meta.get("verified_by"),
+            "superseded_by": meta.get("superseded_by"),
+            "referenced_paths": _extract_referenced_paths(body),
             "_content": body,  # carry content in-memory (no sqlite)
             "_meta": meta,
         })
@@ -246,15 +282,23 @@ def _build_graph(docs, doc_concepts, hash_embeddings):
         concepts = sorted(
             c for c in doc_concepts.get(doc["id"], set()) if not c.startswith("h:")
         )
-        G.add_node(
-            doc["id"],
-            collection=doc["collection"],
-            path=doc["path"],
-            title=doc["title"],
-            modified_at=doc["modified_at"],
-            concepts=concepts,
-            concept_count=len(concepts),
-        )
+        node_attrs = {
+            "collection": doc["collection"],
+            "path": doc["path"],
+            "title": doc["title"],
+            "modified_at": doc["modified_at"],
+            "concepts": concepts,
+            "concept_count": len(concepts),
+        }
+        # Confidence/staleness metadata — only included when present so
+        # notes without these tags don't bloat the graph JSON.
+        for key in ("confidence", "verified_by", "superseded_by"):
+            if doc.get(key):
+                node_attrs[key] = doc[key]
+        refs = doc.get("referenced_paths") or []
+        if refs:
+            node_attrs["referenced_paths"] = refs
+        G.add_node(doc["id"], **node_attrs)
 
     # Phase 1 — IDF-weighted concept co-occurrence
     #
@@ -442,6 +486,11 @@ def build(
             doc_concepts = {}
             for doc in docs:
                 content = _read_content(conn, doc["hash"])
+                meta, body = _parse_frontmatter(content)
+                doc["confidence"] = meta.get("confidence")
+                doc["verified_by"] = meta.get("verified_by")
+                doc["superseded_by"] = meta.get("superseded_by")
+                doc["referenced_paths"] = _extract_referenced_paths(body)
                 doc_concepts[doc["id"]] = _extract_concepts(
                     content, doc["title"], doc["path"], tech_terms, path_concepts
                 )

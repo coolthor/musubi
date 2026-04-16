@@ -23,16 +23,35 @@ from mcp.types import TextContent, Tool
 
 from musubi.config import load_config
 from musubi.graph import Graph
+from musubi.staleness import compute_staleness
 
 
 def _format_node(node: dict[str, Any]) -> dict[str, Any]:
-    """Compact node representation for JSON output."""
-    return {
+    """Compact node representation for JSON output.
+
+    Includes confidence + staleness flags when present so callers can tell
+    at a glance whether a hit is trustworthy or needs verification.
+    """
+    out: dict[str, Any] = {
         "id": node.get("id"),
         "collection": node.get("collection", "?"),
         "title": node.get("title", "?"),
         "path": node.get("path", "?"),
     }
+    for key in ("confidence", "verified_by", "superseded_by"):
+        val = node.get(key)
+        if val:
+            out[key] = val
+
+    stale_info = compute_staleness(
+        node.get("modified_at"),
+        node.get("referenced_paths") or [],
+    )
+    if stale_info["stale"]:
+        out["stale"] = True
+        out["stale_refs"] = stale_info["newer_refs"]
+
+    return out
 
 
 def _load_graph() -> tuple[Graph | None, str | None]:
