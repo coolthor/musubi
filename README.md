@@ -560,10 +560,10 @@ musubi build --source ~/notes/      # from a directory
 ## Measure your token savings
 
 Musubi itself uses **zero LLM tokens** — the graph is built with
-deterministic regex matching, not LLM entity extraction. But does using
-musubi save tokens when you *use* an LLM to search your notes?
-
-The included benchmark answers this empirically:
+deterministic regex matching, not LLM entity extraction. The harder
+question is: does using musubi save tokens when you *use* an LLM to
+search your notes? The honest answer is **"sometimes, with caveats"** —
+the benchmark lets you check whether it holds for your own corpus.
 
 ```bash
 # Preview the 10 test tasks (no API calls, no cost)
@@ -573,6 +573,9 @@ musubi benchmark --dry-run
 # Requires ANTHROPIC_API_KEY. Cost: ~$0.15 per run.
 export ANTHROPIC_API_KEY=sk-ant-...
 musubi benchmark
+
+# Run against your own corpus + custom task list
+musubi benchmark --tasks my-tasks.json --notes ~/my-notes/
 ```
 
 The benchmark runs each task twice — once with only `grep` + `cat`
@@ -589,12 +592,42 @@ measures total tokens consumed. Results go to
 | Exploration | 2 | "Show me related notes" — only graph can do this |
 | Health check | 2 | "What's stale?" — only musubi can answer |
 
+### Preconditions (read before trusting any number)
+
+Token savings are **not unconditional**. What actually matters:
+
+1. **Corpus size.** On the 20-doc demo corpus, baseline `grep` beats
+   musubi on total tokens — when every file is two `grep -l` hops
+   away, keyword search is simply more efficient. A real-corpus run on
+   ~50 well-curated notes flipped this to a ~36% saving for musubi.
+   Below ~30 docs, don't expect wins.
+2. **Task mix.** Musubi dominates `health_check` (staleness / orphan
+   detection — grep literally cannot answer these) and does well on
+   `exploration`. On pure `direct_lookup` of a known topic, grep is
+   often still cheaper, because `musubi search + read_file` is two
+   steps where `grep -l + cat` is two steps but the grep output is
+   tinier. If your workflow is mostly direct lookup, savings are
+   modest or negative.
+3. **Baseline choice.** The benchmark compares against naïve `grep`,
+   which is the realistic fallback for someone without musubi. It is
+   **not** a comparison against qmd alone. Since musubi builds on qmd,
+   some of the observed savings come from qmd's FTS/vector search
+   being better than grep, not from the graph layer itself. We don't
+   try to decompose those — the thing musubi replaces for an end user
+   is "grep my notes," so that's the baseline we report.
+4. **LLM behavior is unstable.** We've run three A/B attempts at
+   "optimizations" (compact output, qmd-snippet passthrough, embedding
+   hybrid) that *looked* like wins on paper and regressed in live
+   runs. Run-to-run variance is real. Trust medians across a few
+   runs, not a single number.
+
 ### Why we test instead of claim
 
-We don't put "saves 40% tokens" in the README without data. Run the
-benchmark yourself and see your actual numbers. The experiment uses the
-bundled demo notes (20 docs) so results are reproducible — anyone who
-clones the repo gets the same test.
+We don't put a single "saves X% tokens" headline in the README because
+the honest answer depends on your corpus, your task mix, and today's
+model behavior. Run the benchmark on your own notes with
+`--tasks my-tasks.json --notes ~/my-notes/` and treat the output as a
+*measurement of your setup*, not a universal claim.
 
 ---
 

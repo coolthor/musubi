@@ -387,9 +387,8 @@ chmod +x ~/.claude/hooks/musubi-presearch.sh
 ## 測量 token 節省
 
 Musubi 自己用**零 LLM token** — 圖譜用確定性的 regex 比對建立，不用 LLM
-做 entity extraction。但用 musubi 輔助 LLM 搜尋筆記，能不能省 token？
-
-內建的 benchmark 用實驗回答這個問題：
+做 entity extraction。**但**用 musubi 輔助 LLM 搜尋筆記能不能省 token？
+老實答案是「**有條件地可以**」，benchmark 讓你在自己的 corpus 上驗證。
 
 ```bash
 # 預覽 10 個測試任務（不呼叫 API，零成本）
@@ -399,13 +398,40 @@ musubi benchmark --dry-run
 # 需要 ANTHROPIC_API_KEY。成本：每次約 $0.15。
 export ANTHROPIC_API_KEY=sk-ant-...
 musubi benchmark
+
+# 用你自己的筆記與客製 tasks 跑
+musubi benchmark --tasks my-tasks.json --notes ~/my-notes/
 ```
+
+### 相信任何數字前請讀這段前提
+
+token 節省**不是無條件的**。真正影響結果的因素：
+
+1. **Corpus 規模**：在 20 篇 demo corpus 上，baseline `grep` 整體
+   贏過 musubi — 檔案少到兩次 `grep -l` 就能定位，keyword search
+   就是最省的路。在 ~50 篇實戰 corpus 上，musubi 翻盤到節省約 36%。
+   **< 30 篇基本沒贏面**。
+2. **Task 組合**：musubi 在 `health_check`（staleness / orphan 偵測
+   — grep 根本做不到）和 `exploration` 大勝；在純粹的「我知道主題
+   找檔案」直接查找任務上，**grep 通常更便宜**，因為
+   `musubi search + read_file` 兩步，`grep -l + cat` 也兩步，但 grep
+   的輸出更小。你日常如果都是直接查找，別期待大勝。
+3. **Baseline 選擇**：benchmark 比的是**沒有 musubi 的人的回退方案**
+   — naïve grep。**不是** 比 qmd 單獨使用。Musubi 建在 qmd 之上，
+   觀測到的節省有一部分其實來自 qmd 的 FTS/vector search 本來就比 grep
+   強。我們不去拆解這兩層，因為對終端使用者來說 musubi 取代的就是
+   「grep 我的筆記」，這是我們誠實的比較對象。
+4. **LLM 行為本身不穩定**：我們試過三個看起來合理的「優化」
+   （compact 輸出、qmd-snippet passthrough、embedding hybrid），
+   每一個紙上分析像贏但實跑都退步。Run-to-run variance 是真的。
+   用幾次 run 的中位數判斷，別信單一數字。
 
 ### 為什麼用測試而不是宣稱
 
-我們不會在 README 裡寫「省 40% token」但沒有數據。自己跑 benchmark 看你的
-實際數字。實驗用內建的 demo 筆記（20 篇），結果可重現 — 任何 clone repo 的人
-都會得到一樣的測試結果。
+我們不會在 README 裡放一個「省 X% token」的 headline 數字，因為誠實的
+答案取決於你的 corpus、task 組合、當天的模型行為。用
+`--tasks my-tasks.json --notes ~/my-notes/` 在你自己的筆記上跑，把
+輸出當成**對你這套設定的測量**，不是普世宣稱。
 
 ---
 
