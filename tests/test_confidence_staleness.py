@@ -206,3 +206,59 @@ def test_staleness_expands_home_anchored(tmp_path: Path, monkeypatch):
         referenced_paths=["~/ref.md"],
     )
     assert stale["stale"] is True
+
+
+# --- CLI label formatting ----------------------------------------------
+
+def test_node_label_shows_confidence(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    # Force reload so USE_COLOR picks up NO_COLOR
+    import importlib
+    from musubi import cli
+    importlib.reload(cli)
+
+    label = cli._node_label({
+        "collection": "memory",
+        "title": "Sample",
+        "path": "x.md",
+        "confidence": "verified",
+    })
+    assert "verified" in label
+    assert "✓" in label
+
+
+def test_node_label_shows_stale_badge(tmp_path, monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    import importlib
+    from musubi import cli
+    importlib.reload(cli)
+
+    ref = tmp_path / "src.py"
+    ref.write_text("code")
+    now = time.time()
+    os.utime(ref, (now, now))
+
+    label = cli._node_label({
+        "collection": "memory",
+        "title": "Note",
+        "path": "note.md",
+        "modified_at": now - 3600,
+        "referenced_paths": [str(ref)],
+    })
+    assert "stale" in label
+
+
+def test_node_label_no_badges_when_absent(monkeypatch):
+    monkeypatch.setenv("NO_COLOR", "1")
+    import importlib
+    from musubi import cli
+    importlib.reload(cli)
+
+    label = cli._node_label({
+        "collection": "memory",
+        "title": "Plain",
+        "path": "x.md",
+    })
+    assert "stale" not in label
+    assert "verified" not in label
+    assert "hypothesis" not in label

@@ -43,11 +43,36 @@ def c(text: str, color: str) -> str:
     return f"{ANSI[color]}{text}{ANSI['reset']}"
 
 
+_CONFIDENCE_COLORS = {
+    "verified": "green",
+    "hypothesis": "yellow",
+    "superseded": "red",
+}
+
+
 def _node_label(node: dict[str, Any]) -> str:
     coll = node.get("collection", "?")
     title = node.get("title", "?")
     path = node.get("path", "?")
-    return f"[{coll}] {title}  {c(path, 'dim')}"
+
+    badges: list[str] = []
+    conf = node.get("confidence")
+    if conf:
+        mark = {"verified": "✓", "hypothesis": "?", "superseded": "⚠"}.get(conf, "")
+        color = _CONFIDENCE_COLORS.get(conf, "dim")
+        badges.append(c(f"[{conf} {mark}]".rstrip(" ]") + "]", color))
+
+    from musubi.staleness import compute_staleness
+    stale_info = compute_staleness(
+        node.get("modified_at"),
+        node.get("referenced_paths") or [],
+    )
+    if stale_info["stale"]:
+        n = len(stale_info["newer_refs"])
+        badges.append(c(f"⚠ stale ({n} src newer)", "yellow"))
+
+    badge_str = (" " + " ".join(badges)) if badges else ""
+    return f"[{coll}] {title}{badge_str}  {c(path, 'dim')}"
 
 
 def _is_stale(cfg: Config) -> bool:
