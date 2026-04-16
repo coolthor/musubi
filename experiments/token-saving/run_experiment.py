@@ -42,7 +42,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-DEMO_NOTES = Path(__file__).parent.parent / "demo-notes"
+# Demo notes live in two places depending on how the benchmark is invoked:
+#   - Installed via `uv tool install musubi`: force-included at musubi/demo-notes
+#   - Running from source checkout: examples/demo-notes at the repo root
+_INSTALLED_NOTES = Path(__file__).parent.parent / "demo-notes"
+_SOURCE_NOTES = Path(__file__).parent.parent.parent / "examples" / "demo-notes"
+DEMO_NOTES = _INSTALLED_NOTES if _INSTALLED_NOTES.is_dir() else _SOURCE_NOTES
 TASKS_FILE = Path(__file__).parent / "tasks.json"
 RESULTS_DIR = Path(__file__).parent / "results"
 _MODEL = "claude-sonnet-4-20250514"
