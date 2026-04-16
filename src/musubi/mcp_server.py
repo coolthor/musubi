@@ -21,6 +21,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from musubi.cli import _clean_qmd_snippet
 from musubi.config import load_config
 from musubi.graph import Graph
 from musubi.staleness import compute_staleness
@@ -95,11 +96,15 @@ def _hybrid_search(query: str, limit: int = 10) -> dict[str, Any]:
         hits = hits.get("results", []) if isinstance(hits, dict) else []
 
     base_ids: list[tuple[Any, float]] = []
+    id_to_snippet: dict[Any, str] = {}
     for rank, hit in enumerate(hits[:limit]):
         file_field = hit.get("file") or hit.get("path") or ""
         nid = Graph.match_qmd_uri(file_field, g.path_to_id)
         if nid is not None:
             base_ids.append((nid, 1.0 / (rank + 1)))
+            snippet = hit.get("snippet")
+            if snippet:
+                id_to_snippet[nid] = _clean_qmd_snippet(snippet)
 
     expanded: dict[Any, float] = {}
     for nid, base in base_ids:
@@ -115,11 +120,20 @@ def _hybrid_search(query: str, limit: int = 10) -> dict[str, Any]:
     results = []
     for nid, score in ranked:
         n = g.id_to_node.get(nid, {})
-        results.append({
+        is_direct = nid in base_set
+        entry = {
             **_format_node(n),
             "score": round(score, 4),
-            "kind": "direct" if nid in base_set else "neighbor",
-        })
+            "kind": "direct" if is_direct else "neighbor",
+        }
+        # Attach qmd's query-aligned snippet only to direct hits. Graph
+        # neighbors didn't match the query, so a snippet would fake
+        # authority — model should call neighbors or read_file to verify.
+        if is_direct:
+            snip = id_to_snippet.get(nid)
+            if snip:
+                entry["snippet"] = snip
+        results.append(entry)
 
     return {
         "query": query,
