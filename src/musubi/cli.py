@@ -572,6 +572,9 @@ def main(argv: list[str] | None = None) -> int:
     pbench.add_argument("--model", default="claude-sonnet-4-20250514", help="model to use")
     pbench.set_defaults(func=cmd_benchmark)
 
+    pmcp = sub.add_parser("mcp", help="start MCP server (stdio transport)")
+    pmcp.set_defaults(func=lambda args, cfg: _run_mcp())
+
     args = p.parse_args(argv)
     if not getattr(args, "command", None):
         p.print_help()
@@ -581,8 +584,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "init":
         return args.func(args, None)
 
+    # mcp loads config on-demand inside the server
+    if args.command == "mcp":
+        return args.func(args, None)
+
     cfg = load_config()
     return args.func(args, cfg)
+
+
+def _run_mcp() -> int:
+    """Lazy import so mcp package is only required when actually running the server."""
+    try:
+        from musubi.mcp_server import run
+    except ImportError as e:
+        print(c(f"MCP server requires the 'mcp' package: {e}", "red"), file=sys.stderr)
+        print(c("Install with: pipx install mcp  (or) pip install mcp", "yellow"), file=sys.stderr)
+        return 1
+    return run()
 
 
 if __name__ == "__main__":
