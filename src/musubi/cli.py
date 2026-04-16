@@ -273,19 +273,8 @@ def cmd_neighbors(args: argparse.Namespace, cfg: Config) -> int:
             )
         matches = matches[:1]
 
-    compact = getattr(args, "format", "full") == "compact"
-
     for source_id in matches:
         source = g.id_to_node[source_id]
-        nbrs = g.neighbors_of(source_id, limit=args.limit)
-
-        if compact:
-            for e in nbrs:
-                n = g.id_to_node.get(e["id"], {})
-                w = e.get("weight", 0)
-                print(f"{n.get('path', '?')}\tw={w:.1f}")
-            continue
-
         print()
         print(c(f"◇ {_node_label(source)}", "cyan"))
         print(
@@ -296,6 +285,7 @@ def cmd_neighbors(args: argparse.Namespace, cfg: Config) -> int:
             )
         )
 
+        nbrs = g.neighbors_of(source_id, limit=args.limit)
         if not nbrs:
             print(c("  (no neighbors — isolated node)", "yellow"))
             continue
@@ -440,28 +430,6 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
     ranked = sorted(expanded.items(), key=lambda kv: kv[1], reverse=True)[: args.limit]
     base_set = {nid for nid, _ in base_ids}
 
-    if getattr(args, "format", "full") == "compact":
-        # Grep-like one-line-per-hit output. No headers, no color, minimal
-        # fields — optimized for LLM tool-use contexts where every token
-        # counts. Format: `<path>\t<marker><score>[ badge badge]`
-        from musubi.staleness import compute_staleness
-        for nid, score in ranked:
-            n = g.id_to_node.get(nid, {})
-            marker = "*" if nid in base_set else "+"
-            badges: list[str] = []
-            conf = n.get("confidence")
-            if conf:
-                badges.append(conf)
-            stale = compute_staleness(
-                n.get("modified_at"),
-                n.get("referenced_paths") or [],
-            )
-            if stale["stale"]:
-                badges.append("stale")
-            tail = (" " + " ".join(badges)) if badges else ""
-            print(f"{n.get('path', '?')}\t{marker}{score:.2f}{tail}")
-        return 0
-
     print(c(f"◇ Musubi search: {args.query}", "cyan"))
     print()
     for nid, score in ranked:
@@ -592,12 +560,6 @@ def main(argv: list[str] | None = None) -> int:
     pn.add_argument("query", help="doc id, path, or title substring")
     pn.add_argument("--limit", type=int, default=8)
     pn.add_argument("--all", action="store_true", help="if ambiguous, show all matches")
-    pn.add_argument(
-        "--format",
-        choices=["full", "compact"],
-        default="full",
-        help="compact = one-line-per-hit (token-efficient for LLM use)",
-    )
     pn.set_defaults(func=cmd_neighbors)
 
     pc = sub.add_parser("cold", help="list cold/isolated docs")
@@ -607,12 +569,6 @@ def main(argv: list[str] | None = None) -> int:
     psearch = sub.add_parser("search", help="hybrid qmd keyword + graph search")
     psearch.add_argument("query")
     psearch.add_argument("--limit", type=int, default=10)
-    psearch.add_argument(
-        "--format",
-        choices=["full", "compact"],
-        default="full",
-        help="compact = grep-like one-line-per-hit (token-efficient for LLM use)",
-    )
     psearch.set_defaults(func=cmd_search)
 
     pp = sub.add_parser("path", help="resolve query to node id + path (debug)")
