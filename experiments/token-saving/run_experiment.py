@@ -95,7 +95,13 @@ TOOLS_BASELINE = [
 TOOLS_MUSUBI = [
     {
         "name": "musubi_search",
-        "description": "Search notes with graph-augmented expansion. Returns direct keyword hits (★) and graph-neighbor boosts (+).",
+        "description": (
+            "Search notes. Returns one line per hit: `path\\tmarker score [badges]`. "
+            "* = direct keyword hit, + = graph-neighbor boost. "
+            "For a specific known note, the top * is almost always the answer — "
+            "read it directly without calling neighbors. "
+            "Only chain to `musubi_neighbors` when the user asks for related/surrounding context."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -106,7 +112,11 @@ TOOLS_MUSUBI = [
     },
     {
         "name": "musubi_neighbors",
-        "description": "Show graph neighbors of a document — notes connected by shared concepts.",
+        "description": (
+            "Graph neighbors of a document. ONLY use when the user explicitly wants "
+            "related/surrounding notes (cross-domain, exploration). "
+            "For simple lookup, `musubi_search` is enough."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -118,7 +128,10 @@ TOOLS_MUSUBI = [
     },
     {
         "name": "musubi_cold",
-        "description": "List cold/isolated documents — notes with low connectivity and/or stale modification dates.",
+        "description": (
+            "List orphan / weakly-connected docs — direct answer for 'which notes are "
+            "isolated / candidates for archiving'. No other tool can answer this."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -128,7 +141,7 @@ TOOLS_MUSUBI = [
     },
     {
         "name": "musubi_stats",
-        "description": "Show knowledge graph overview: node/edge counts, top concepts, hub nodes, collections.",
+        "description": "Knowledge graph overview: node/edge counts, top concepts, hub nodes, collections.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -176,11 +189,17 @@ def execute_tool(name: str, args: dict[str, Any], notes_dir: Path) -> str:
         return path.read_text(encoding="utf-8", errors="replace")[:3000]
 
     if name == "musubi_search":
-        return _run(["musubi", "search", args["query"], "--limit", "8"])
+        return _run([
+            "musubi", "search", args["query"],
+            "--limit", "8", "--format", "compact",
+        ])
 
     if name == "musubi_neighbors":
         limit = str(args.get("limit", 5))
-        return _run(["musubi", "neighbors", args["doc"], "--limit", limit])
+        return _run([
+            "musubi", "neighbors", args["doc"],
+            "--limit", limit, "--format", "compact",
+        ])
 
     if name == "musubi_cold":
         limit = str(args.get("limit", 10))
