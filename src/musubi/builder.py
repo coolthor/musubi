@@ -247,26 +247,45 @@ def _extract_concepts(
     path: str,
     tech_terms: set[str],
     path_concepts: dict[str, set[str]],
-) -> set[str]:
+) -> dict[str, int]:
+    """Extract concepts with strength tier.
+
+    Returns a dict ``{concept: strength}`` where strength is 2 when the
+    concept appears inside a H1/H2/H3 heading (author's strong signal
+    that the note is "about" this topic) and 1 otherwise. Downstream
+    edge building multiplies IDF by average strength, so heading matches
+    contribute more to connectedness than passing body mentions.
+    """
     combined = (title + " " + text).lower()
-    found: set[str] = set()
+    found: dict[str, int] = {}
+
+    # Gather heading text once for heading-boost detection
+    heading_chunks: list[str] = []
+    for match in re.finditer(r"^#{1,3}\s+(.+)$", text, re.MULTILINE):
+        heading_chunks.append(re.sub(r"\*\*|`|#", "", match.group(1)).lower())
+    heading_text = " \n ".join(heading_chunks)
 
     for term in tech_terms:
         pattern = r"(?:^|[\s\-_/,.(])" + re.escape(term) + r"(?:[\s\-_/,.):]|$)"
         if re.search(pattern, combined):
-            found.add(term)
+            # Boost to strength 2 if the same term shows up in any heading.
+            if heading_text and re.search(pattern, heading_text):
+                found[term] = 2
+            else:
+                found[term] = 1
 
     path_lower = path.lower()
     for key, concepts in path_concepts.items():
         if key in path_lower:
-            found.update(concepts)
+            for c in concepts:
+                found.setdefault(c, 1)
 
     # H2 / H3 headings as weak concepts (h: prefix so we can filter them out
     # of top-concept reports while still using them for edge discovery).
     for match in re.finditer(r"^#{2,3}\s+(.+)$", text, re.MULTILINE):
         heading = re.sub(r"\*\*|`|#", "", match.group(1)).strip().lower()
         if 3 < len(heading) < 50:
-            found.add(f"h:{heading}")
+            found[f"h:{heading}"] = 1
 
     return found
 
@@ -338,6 +357,15 @@ def _build_graph(docs, doc_concepts, hash_embeddings):
         print(f"  stop-concepts (>{stop_threshold:.0f} docs): {', '.join(sorted(stop_concepts)[:8])}"
               + (f" +{len(stop_concepts) - 8} more" if len(stop_concepts) > 8 else ""))
 
+    # Heading-boost experiment: when enabled via MUSUBI_HEADING_BOOST=1,
+    # a concept that appears inside a H1/H2/H3 heading contributes more IDF
+    # than one that merely occurs in the body. Authorial headings are the
+    # strongest signal that a note is "about" a topic rather than just
+    # passing through it. Multiplier = avg(strength_a, strength_b) where
+    # strength is 1 (body) or 2 (heading) per doc — so both-in-heading
+    # gets 2x, one-in-heading gets 1.5x, neither gets 1x.
+    heading_boost = os.environ.get("MUSUBI_HEADING_BOOST", "").lower() in ("1", "true", "yes")
+
     edge_data: dict[tuple[Any, Any], dict[str, Any]] = defaultdict(
         lambda: {"idf_weight": 0.0, "shared": [], "shared_count": 0}
     )
@@ -348,7 +376,13 @@ def _build_graph(docs, doc_concepts, hash_embeddings):
             for j in range(i + 1, len(doc_list)):
                 a = min(doc_list[i], doc_list[j])
                 b = max(doc_list[i], doc_list[j])
-                edge_data[(a, b)]["idf_weight"] += idf
+                if heading_boost:
+                    s_a = doc_concepts[a].get(concept, 1) if isinstance(doc_concepts[a], dict) else 1
+                    s_b = doc_concepts[b].get(concept, 1) if isinstance(doc_concepts[b], dict) else 1
+                    multiplier = (s_a + s_b) / 2.0
+                else:
+                    multiplier = 1.0
+                edge_data[(a, b)]["idf_weight"] += idf * multiplier
                 edge_data[(a, b)]["shared_count"] += 1
                 if len(edge_data[(a, b)]["shared"]) < 6:
                     edge_data[(a, b)]["shared"].append(concept)
