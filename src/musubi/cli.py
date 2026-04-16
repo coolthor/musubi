@@ -43,35 +43,6 @@ def c(text: str, color: str) -> str:
     return f"{ANSI[color]}{text}{ANSI['reset']}"
 
 
-def _clean_qmd_snippet(raw: str, max_chars: int = 240) -> str:
-    """Normalize a qmd `--json` snippet for terminal display.
-
-    qmd snippets look like::
-
-        @@ -1,3 @@ (0 before, 116 after)
-        # Redis Connection Churn
-        **Date:** 2026-03-01
-
-    We drop the diff-hunk header, collapse blank lines, and cap length so
-    one hit can't dominate the output. Returns empty string if nothing
-    useful remains after cleaning.
-    """
-    if not raw:
-        return ""
-    lines: list[str] = []
-    for line in raw.splitlines():
-        s = line.strip()
-        if not s or s.startswith("@@"):
-            continue
-        lines.append(s)
-        if sum(len(x) for x in lines) >= max_chars:
-            break
-    text = "\n".join(lines)
-    if len(text) > max_chars:
-        text = text[: max_chars - 1].rstrip() + "…"
-    return text
-
-
 _CONFIDENCE_COLORS = {
     "verified": "green",
     "hypothesis": "yellow",
@@ -423,7 +394,6 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
         hits = hits.get("results", []) if isinstance(hits, dict) else []
 
     base_ids: list[tuple[Any, float]] = []
-    id_to_snippet: dict[Any, str] = {}
     skipped = 0
     for rank, hit in enumerate(hits[: args.limit]):
         file_field = hit.get("file") or hit.get("path") or ""
@@ -432,9 +402,6 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
             skipped += 1
             continue
         base_ids.append((nid, 1.0 / (rank + 1)))
-        snippet = hit.get("snippet")
-        if snippet:
-            id_to_snippet[nid] = _clean_qmd_snippet(snippet)
 
     if skipped:
         print(
@@ -467,17 +434,8 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
     print()
     for nid, score in ranked:
         n = g.id_to_node.get(nid, {})
-        is_direct = nid in base_set
-        marker = c("★", "yellow") if is_direct else c("+", "green")
+        marker = c("★", "yellow") if nid in base_set else c("+", "green")
         print(f"  {marker} {score:.3f}  {_node_label(n)}")
-        # Query-aligned snippet from qmd — only under direct hits.
-        # Graph-boosted neighbors don't get snippets because the query didn't
-        # match them directly; a snippet would fake authority they don't have.
-        if is_direct:
-            snippet = id_to_snippet.get(nid)
-            if snippet:
-                for line in snippet.splitlines():
-                    print(c(f"      ┆ {line}", "dim"))
     print()
     print(c("  ★ = direct hit    + = graph neighbor boost", "dim"))
     return 0
