@@ -50,7 +50,7 @@ _SOURCE_NOTES = Path(__file__).parent.parent.parent / "examples" / "demo-notes"
 DEMO_NOTES = _INSTALLED_NOTES if _INSTALLED_NOTES.is_dir() else _SOURCE_NOTES
 TASKS_FILE = Path(__file__).parent / "tasks.json"
 RESULTS_DIR = Path(__file__).parent / "results"
-_MODEL = "claude-sonnet-4-20250514"
+_MODEL = "claude-sonnet-4-5"
 MAX_TURNS = 10
 # Defined as a mutable container so main() can update it without `global`
 MODEL = _MODEL
@@ -388,19 +388,26 @@ def main() -> int:
     p.add_argument("--group", choices=["baseline", "musubi"], help="run only one group")
     p.add_argument("--dry-run", action="store_true", help="show tasks without calling API")
     p.add_argument("--notes", default=str(DEMO_NOTES), help="path to notes directory")
+    p.add_argument("--tasks", default=str(TASKS_FILE),
+                   help="path to tasks JSON file (default: demo tasks)")
     p.add_argument("--model", default=MODEL, help="Claude model to use")
     args = p.parse_args()
 
     # Update the module-level MODEL so run_conversation picks it up
     _update_model(args.model)
     notes_dir = Path(args.notes)
+    tasks_path = Path(args.tasks)
 
     if not notes_dir.is_dir():
         print(f"Notes directory not found: {notes_dir}", file=sys.stderr)
         print("Run: musubi build --source examples/demo-notes/", file=sys.stderr)
         return 1
 
-    with TASKS_FILE.open() as f:
+    if not tasks_path.is_file():
+        print(f"Tasks file not found: {tasks_path}", file=sys.stderr)
+        return 1
+
+    with tasks_path.open() as f:
         tasks = json.load(f)
 
     if args.task:

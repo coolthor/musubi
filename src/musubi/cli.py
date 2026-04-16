@@ -491,6 +491,10 @@ def cmd_benchmark(args: argparse.Namespace, _cfg: Config | None) -> int:
         cmd.extend(["--task", args.task])
     if args.model:
         cmd.extend(["--model", args.model])
+    if getattr(args, "tasks", None):
+        cmd.extend(["--tasks", args.tasks])
+    if getattr(args, "notes", None):
+        cmd.extend(["--notes", args.notes])
 
     import subprocess as sp
     return sp.run(cmd).returncode
@@ -594,7 +598,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     pbench.add_argument("--task", help="run a single task by id")
     pbench.add_argument("--dry-run", action="store_true", help="preview tasks without API calls")
-    pbench.add_argument("--model", default="claude-sonnet-4-20250514", help="model to use")
+    pbench.add_argument("--model", default="claude-sonnet-4-5", help="model to use")
+    pbench.add_argument("--tasks", help="path to custom tasks.json (default: bundled demo tasks)")
+    pbench.add_argument("--notes", help="path to notes directory (default: bundled demo notes)")
     pbench.set_defaults(func=cmd_benchmark)
 
     pmcp = sub.add_parser("mcp", help="start MCP server (stdio transport)")

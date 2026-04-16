@@ -1,0 +1,62 @@
+[
+  {
+    "id": "direct-1",
+    "type": "direct_lookup",
+    "query": "Find my note about the Redis connection churn root cause in BPS-API.",
+    "description": "Specific perf note — baseline should hit on 'redis churn'"
+  },
+  {
+    "id": "direct-2",
+    "type": "direct_lookup",
+    "query": "Where did I document the NVFP4 bugs on GX10 with vLLM?",
+    "description": "Infrastructure note — multiple keywords, but 'NVFP4' is rare enough"
+  },
+  {
+    "id": "direct-3",
+    "type": "direct_lookup",
+    "query": "I'm looking for my BPS backtest results from Q1 2026.",
+    "description": "Trading strategy note — fuzzy because 'Q1' may or may not be in filename"
+  },
+  {
+    "id": "cross-1",
+    "type": "cross_domain",
+    "query": "Find everything related to Alpaca API — options placement, OAuth, webhooks, rate limits.",
+    "description": "Cross-domain: spans bps-api + bpstracker-web + maybe firstrade notes"
+  },
+  {
+    "id": "cross-2",
+    "type": "cross_domain",
+    "query": "Anything connecting SwiftUI iOS app performance to backend caching decisions?",
+    "description": "Cross-domain: iOS (bps-tracker) + backend (bps-api). Different vocabularies, same theme"
+  },
+  {
+    "id": "cross-3",
+    "type": "cross_domain",
+    "query": "Find notes that connect options strategy (SB2 / SH / breach-stop) to execution system behavior.",
+    "description": "Strategy notes (ft-option) vs execution code (bps-api). Strong musubi territory"
+  },
+  {
+    "id": "explore-1",
+    "type": "exploration",
+    "query": "Show me notes related to my NVFP4 investigation — model quantization, driver bugs, vLLM config.",
+    "description": "Graph exploration — neighbors of the main NVFP4 note"
+  },
+  {
+    "id": "explore-2",
+    "type": "exploration",
+    "query": "Give me the cluster of claude-memory notes covering my feedback preferences and past decisions.",
+    "description": "Cluster walk — claude-memory collection neighborhood"
+  },
+  {
+    "id": "health-1",
+    "type": "health_check",
+    "query": "Which of my BPS-API perf / incident docs reference code that may have changed since the doc was written?",
+    "description": "Staleness check — musubi-only capability"
+  },
+  {
+    "id": "health-2",
+    "type": "health_check",
+    "query": "Show me the orphan or weakly-connected notes that might be candidates for archiving.",
+    "description": "Cold node discovery — musubi-only capability"
+  }
+]
