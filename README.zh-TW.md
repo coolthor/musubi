@@ -1,10 +1,12 @@
 # Musubi 結び
 
-**讓你的筆記學會旁徵博引。**
+<p align="center">
+  <img src="assets/banner.svg" alt="Musubi — 讓你的筆記學會旁徵博引" width="100%">
+</p>
 
-為 Markdown 筆記打造的確定性知識圖譜 — 不燒 LLM token、不綁定平台、不需要 server。
-
-> [English](README.md) | 繁體中文
+<p align="center">
+  <a href="README.md">English</a> &nbsp;|&nbsp; <b>繁體中文</b>
+</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
@@ -16,8 +18,12 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo-graph.png" alt="Musubi demo 知識圖譜" width="100%">
+  <img src="assets/demo.svg" alt="musubi map 與 health — CLI demo" width="840">
 </p>
+
+## 目錄
+
+**[它做什麼](#它做什麼)** · [為什麼不用其他工具](#為什麼不用其他工具) · [安裝](#安裝) · [快速上手](#快速上手) · [Orientation map](#orientation-map-musubi-map) · [Health audit](#health-audit-musubi-health) · [記憶品質](#記憶品質信心度--過時偵測) · [運作原理](#運作原理)
 
 ```bash
 $ musubi neighbors "vllm"
@@ -42,6 +48,14 @@ Musubi 透過共享概念 — `quantization`、`kv cache`、`vllm` — 把它們
 
 ## 它做什麼
 
+- 🧠 **概念提取** — 從每篇筆記抓技術名詞，確定性、不燒 LLM
+- 🔗 **加權概念圖** — 用「共享的想法」連結筆記(IDF 加權),不是文字相似度
+- 🗺 **Orientation map** — 一頁掌握整個知識庫,給 agent 或給人讀(`musubi map`)
+- 🩺 **健康體檢** — 孤兒、連結覆蓋率、hub 概念雜訊、失效檔案連結(`musubi health`)
+- ❄️ **冷節點偵測** — 在筆記爛掉前,把失連/孤立的挑出來
+- 🔎 **混合搜尋** — keyword + 圖譜擴展 + 信心度與過時 badge
+- ⚡ **確定性 × 本地** — 圖譜就是一個 JSON、幾秒建好;不需 server、不需 API key
+
 Musubi 掃描一個資料夾裡的 Markdown 檔案，從每篇文件中提取技術概念，
 建立一張加權的概念共現圖。結果是一個 JSON 圖譜，可以從命令列即時查詢：
 
@@ -58,6 +72,11 @@ Musubi 掃描一個資料夾裡的 Markdown 檔案，從每篇文件中提取技
 | `musubi benchmark` | 測量 musubi 幫你省了多少 token |
 
 不需要 server。不需要資料庫。不需要 API key。只需要 Markdown 檔案和一個 CLI。
+
+<p align="center">
+  <img src="assets/demo-graph.png" alt="Musubi 概念圖 — 連結的 hub vs 冷掉的孤兒節點" width="92%">
+  <br><sub>demo 語料的概念圖:亮色是相連的 hub,暗色是 musubi 幫你挑出來的冷/孤兒節點。</sub>
+</p>
 
 ---
 

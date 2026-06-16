@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" width="1280" height="320" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0a0f"/>
+      <stop offset="1" stop-color="#0c1320"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#00ffc8" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#00ffc8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="320" fill="url(#bg)"/>
+  <ellipse cx="980" cy="160" rx="380" ry="220" fill="url(#glow)"/>
+
+  <!-- subtle node-graph motif -->
+  <g stroke="#00ffc8" stroke-opacity="0.30" stroke-width="1.4">
+    <line x1="930" y1="80"  x2="1040" y2="150"/>
+    <line x1="1040" y1="150" x2="980" y2="250"/>
+    <line x1="1040" y1="150" x2="1150" y2="120"/>
+    <line x1="1040" y1="150" x2="1130" y2="230"/>
+    <line x1="930" y1="80"  x2="860" y2="170"/>
+    <line x1="980" y1="250" x2="1130" y2="230"/>
+  </g>
+  <g stroke="#0a0a0f" stroke-width="2">
+    <circle cx="1040" cy="150" r="16" fill="#00ffc8"/>
+    <circle cx="930"  cy="80"  r="9"  fill="#79c0ff"/>
+    <circle cx="1150" cy="120" r="8"  fill="#ffa657"/>
+    <circle cx="980"  cy="250" r="10" fill="#d2a8ff"/>
+    <circle cx="1130" cy="230" r="9"  fill="#ff6b9d"/>
+    <circle cx="860"  cy="170" r="7"  fill="#7ee787"/>
+    <!-- a faint orphan -->
+    <circle cx="760"  cy="250" r="6"  fill="#445" />
+  </g>
+
+  <!-- wordmark -->
+  <text x="90" y="150" font-size="78" font-weight="700" fill="#f0f6fc">Musubi <tspan fill="#00ffc8">結び</tspan></text>
+  <text x="94" y="196" font-size="22" fill="#9aa7b3">Surface the connections your keyword search misses.</text>
+  <text x="94" y="236" font-size="15" fill="#5d6b7a">Deterministic knowledge graph for markdown notes &#183; no LLM &#183; no server &#183; no lock-in</text>
+</svg>

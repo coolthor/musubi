@@ -1,10 +1,12 @@
 # Musubi 結び
 
-**Surface the connections your search engine misses.**
+<p align="center">
+  <img src="assets/banner.svg" alt="Musubi — surface the connections your keyword search misses" width="100%">
+</p>
 
-A deterministic knowledge graph for markdown notes — no LLM, no lock-in, no server.
-
-> English | [繁體中文](README.zh-TW.md)
+<p align="center">
+  <b>English</b> &nbsp;|&nbsp; <a href="README.zh-TW.md">繁體中文</a>
+</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
@@ -16,8 +18,12 @@ A deterministic knowledge graph for markdown notes — no LLM, no lock-in, no se
 </p>
 
 <p align="center">
-  <img src="assets/demo-graph.png" alt="Musubi demo knowledge graph" width="100%">
+  <img src="assets/demo.svg" alt="musubi map and health — CLI demo" width="840">
 </p>
+
+## Contents
+
+**[What it does](#what-it-does)** · [Why not…](#why-not) · [Numbers](#numbers) · [Install](#install) · [Quick start](#quick-start) · [Orientation map](#orientation-map-musubi-map) · [Health audit](#health-audit-musubi-health) · [Memory quality](#memory-quality-confidence--staleness) · [How it works](#how-it-works) · [Your own notes](#use-it-on-your-own-notes) · [Token savings](#measure-your-token-savings) · [Claude Code](#using-with-claude-code)
 
 ```bash
 $ musubi neighbors "vllm"
@@ -43,6 +49,14 @@ connection surfaces automatically.
 
 ## What it does
 
+- 🧠 **Concept extraction** — pulls technical terms from each note, deterministically, no LLM
+- 🔗 **Weighted concept graph** — links notes by *shared ideas* (IDF-weighted), not text similarity
+- 🗺 **Orientation map** — a one-page map of the whole corpus for an agent or a human (`musubi map`)
+- 🩺 **Health audit** — orphans, link coverage, hub-concept noise, dangling refs (`musubi health`)
+- ❄️ **Cold detection** — surfaces stale / disconnected notes before they rot
+- 🔎 **Hybrid search** — keyword + graph-expansion + confidence & staleness badges
+- ⚡ **Deterministic & local** — the graph is a JSON file built in seconds; no server, no API key
+
 Musubi scans a directory of markdown files, extracts technical concepts
 from each document, and builds a weighted graph of concept co-occurrence.
 The result is a JSON graph you can query instantly from the command line:
@@ -60,6 +74,11 @@ The result is a JSON graph you can query instantly from the command line:
 | `musubi benchmark` | Measure how many tokens musubi saves you ([details](#measure-your-token-savings)) |
 
 No servers. No databases. No API keys. Just markdown files and a CLI.
+
+<p align="center">
+  <img src="assets/demo-graph.png" alt="Musubi concept graph — connected hubs vs cold/orphan notes" width="92%">
+  <br><sub>The demo corpus as a concept graph: bright connected hubs, dim cold/orphan notes musubi flags for you.</sub>
+</p>
 
 ---
 
