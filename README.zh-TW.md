@@ -7,6 +7,15 @@
 > [English](README.md) | 繁體中文
 
 <p align="center">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
+  <img src="https://img.shields.io/github/license/coolthor/musubi" alt="License: MIT">
+  <img src="https://img.shields.io/github/actions/workflow/status/coolthor/musubi/ci.yml?branch=master&label=tests" alt="CI">
+  <img src="https://img.shields.io/github/stars/coolthor/musubi?style=flat&logo=github" alt="GitHub stars">
+  <img src="https://img.shields.io/github/last-commit/coolthor/musubi" alt="Last commit">
+  <img src="https://img.shields.io/badge/LLM-not%20required-success" alt="No LLM required">
+</p>
+
+<p align="center">
   <img src="assets/demo-graph.png" alt="Musubi demo 知識圖譜" width="100%">
 </p>
 
@@ -43,6 +52,8 @@ Musubi 掃描一個資料夾裡的 Markdown 檔案，從每篇文件中提取技
 | `musubi stats` | 知識圖譜有多大？hub 節點是誰？ |
 | `musubi neighbors <doc>` | 哪些筆記跟這篇相關？ |
 | `musubi cold` | 哪些筆記已經冷掉、失去連結？ |
+| `musubi map` | 給我一頁「整個知識庫的地圖」快速上手——給 agent 或給人讀（[說明](#orientation-map-musubi-map)） |
+| `musubi health` | 知識庫哪裡在爛？——孤兒、連結覆蓋率、hub 概念雜訊、失效檔案連結（[說明](#health-audit-musubi-health)） |
 | `musubi search <query>` | 搜尋 + 圖譜擴展 + 品質 badge（[信心度 + 過時偵測](#記憶品質信心度--過時偵測)） |
 | `musubi benchmark` | 測量 musubi 幫你省了多少 token |
 
@@ -142,6 +153,50 @@ musubi cold --limit 20               # 什麼冷掉了？
 Keyword search 搜 "benchmark" 永遠不會回傳一篇 devops debug 筆記。
 
 **這就是旁徵博引 — 跨領域的關聯自動浮現，不需要你記得每篇筆記寫過什麼。**
+
+---
+
+## Orientation map：`musubi map`
+
+把圖譜畫出來很好看，但很難拿來「做事」。圖譜真正有用的產物，是一頁**讓 agent 快速掌握整個知識庫的地圖**——掃過去抓全貌，再用 `musubi neighbors` / `qmd get` 拉特定筆記。這就是 `musubi map`：每篇筆記、分組、配一行「這篇在講什麼」，內容直接取自筆記 frontmatter 的 `description`（沒有就退而取最強的幾個概念）。
+
+```bash
+musubi map                       # 預設按 collection 分組，印到 stdout
+musubi map --by tag              # 按 frontmatter tags 分組
+musubi map --by concept          # 按主導概念分組
+musubi map --out KB_MAP.md       # 寫成檔案（需要時才讀，不要每 turn 自動載入）
+```
+
+```markdown
+## agents  (12)
+- **Tool Calling Patterns** ❄ — 模型吐出壞掉的 tool call 時怎麼救
+- **Agent Memory** — file-based vs database-backed，小 fleet 為何選檔案
+```
+
+`❄` 標孤立筆記、`⚠` 標已被取代的。這份地圖是**需要時才讀**的 orientation 文件，不是每 turn 都載入的東西。
+
+## Health audit：`musubi health`
+
+知識圖譜真正的用途：把可以動手修的結構性腐爛挑出來。
+
+```bash
+musubi health
+```
+
+```
+◇ KB health — 1145 notes
+  link coverage: 1145/1145 (100%) connected to ≥1 other note
+
+① ORPHANS（無圖譜連結、沒被織進來）：0
+② HUB CONCEPTS（出現在 ≥229 篇、連結一切、訊號低）：13
+    blog (436), agent (380), claude (378), …
+③ DANGLING FILE REFS（筆記指向已不存在的檔案）：12
+    dgx-spark-deployment-guide → ~/models/qwen35-35b-hf
+```
+
+- **孤兒**：零圖譜連結的筆記，沒被織進其餘知識網。
+- **Hub 概念**：太常見、連結一切、鑑別度低的概念（該拆細或列入 stop-list 的候選）。
+- **失效檔案連結**：筆記指向、但本機已不存在的檔案路徑（web 路由與 `/tmp` 之類 ephemeral 路徑會自動忽略）。
 
 ---
 

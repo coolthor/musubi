@@ -145,6 +145,8 @@ def _read_fs_documents(root: Path) -> list[dict[str, Any]]:
             "confidence": meta.get("confidence"),
             "verified_by": meta.get("verified_by"),
             "superseded_by": meta.get("superseded_by"),
+            "description": meta.get("description"),
+            "tags": meta.get("tags"),
             "referenced_paths": _extract_referenced_paths(body),
             "_content": body,  # carry content in-memory (no sqlite)
             "_meta": meta,
@@ -311,7 +313,7 @@ def _build_graph(docs, doc_concepts, hash_embeddings):
         }
         # Confidence/staleness metadata — only included when present so
         # notes without these tags don't bloat the graph JSON.
-        for key in ("confidence", "verified_by", "superseded_by"):
+        for key in ("confidence", "verified_by", "superseded_by", "description", "tags"):
             if doc.get(key):
                 node_attrs[key] = doc[key]
         refs = doc.get("referenced_paths") or []
@@ -524,6 +526,8 @@ def build(
                 doc["confidence"] = meta.get("confidence")
                 doc["verified_by"] = meta.get("verified_by")
                 doc["superseded_by"] = meta.get("superseded_by")
+                doc["description"] = meta.get("description")
+                doc["tags"] = meta.get("tags")
                 doc["referenced_paths"] = _extract_referenced_paths(body)
                 doc_concepts[doc["id"]] = _extract_concepts(
                     content, doc["title"], doc["path"], tech_terms, path_concepts

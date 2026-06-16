@@ -5,6 +5,8 @@ Subcommands
   musubi stats                     print graph summary
   musubi neighbors <query>         show graph neighbors of a doc
   musubi cold [--limit N]          list isolated / stale docs
+  musubi map [--by K] [--out F]    AI-orientation map of the whole corpus
+  musubi health [--limit N]        orphans / coverage / hub / dangling-ref audit
   musubi search <query>            hybrid qmd-keyword + graph-expand search
   musubi path <query>              resolve a query to node id + path (debug)
   musubi build                     rebuild the graph from the qmd index
@@ -541,6 +543,31 @@ def cmd_build(args: argparse.Namespace, cfg: Config) -> int:
 # ---------- argparse ----------
 
 
+def cmd_map(args: argparse.Namespace, cfg: Config) -> int:
+    from musubi.mapgen import generate_map
+
+    g = _load_graph_or_exit(cfg)
+    md = generate_map(g, by=args.by)
+    if args.out:
+        from pathlib import Path
+
+        out = Path(os.path.expanduser(args.out))
+        out.write_text(md, encoding="utf-8")
+        print(c(f"wrote {out} ({len(g.id_to_node)} notes)", "green"), file=sys.stderr)
+    else:
+        sys.stdout.write(md)
+    return 0
+
+
+def cmd_health(args: argparse.Namespace, cfg: Config) -> int:
+    from musubi import health
+
+    g = _load_graph_or_exit(cfg)
+    findings = health.check(g)
+    print(health.format_report(findings, limit=args.limit))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="musubi",
@@ -565,6 +592,16 @@ def main(argv: list[str] | None = None) -> int:
     pc = sub.add_parser("cold", help="list cold/isolated docs")
     pc.add_argument("--limit", type=int, default=15)
     pc.set_defaults(func=cmd_cold)
+
+    pmap = sub.add_parser("map", help="emit an AI-orientation map of the whole corpus")
+    pmap.add_argument("--by", choices=["collection", "tag", "concept"], default="collection",
+                      help="how to group notes (default: collection)")
+    pmap.add_argument("--out", metavar="FILE", help="write to FILE instead of stdout")
+    pmap.set_defaults(func=cmd_map)
+
+    phealth = sub.add_parser("health", help="orphans / coverage / hub-concept / dangling-ref audit")
+    phealth.add_argument("--limit", type=int, default=40)
+    phealth.set_defaults(func=cmd_health)
 
     psearch = sub.add_parser("search", help="hybrid qmd keyword + graph search")
     psearch.add_argument("query")

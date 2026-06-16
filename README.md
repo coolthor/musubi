@@ -7,6 +7,15 @@ A deterministic knowledge graph for markdown notes — no LLM, no lock-in, no se
 > English | [繁體中文](README.zh-TW.md)
 
 <p align="center">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue.svg" alt="Python 3.11+">
+  <img src="https://img.shields.io/github/license/coolthor/musubi" alt="License: MIT">
+  <img src="https://img.shields.io/github/actions/workflow/status/coolthor/musubi/ci.yml?branch=master&label=tests" alt="CI">
+  <img src="https://img.shields.io/github/stars/coolthor/musubi?style=flat&logo=github" alt="GitHub stars">
+  <img src="https://img.shields.io/github/last-commit/coolthor/musubi" alt="Last commit">
+  <img src="https://img.shields.io/badge/LLM-not%20required-success" alt="No LLM required">
+</p>
+
+<p align="center">
   <img src="assets/demo-graph.png" alt="Musubi demo knowledge graph" width="100%">
 </p>
 
@@ -45,6 +54,8 @@ The result is a JSON graph you can query instantly from the command line:
 | `musubi stats` | "How big is my knowledge graph? What are the hubs?" |
 | `musubi neighbors <doc>` | "What other notes are related to this one?" |
 | `musubi cold` | "Which notes have gone stale and lost connections?" |
+| `musubi map` | "Give me a one-page map of the whole corpus to orient on" — for an agent or a human ([details](#orientation-map-musubi-map)) |
+| `musubi health` | "Where is the knowledge base rotting?" — orphans, coverage, hub-concept noise, dangling file refs ([details](#health-audit-musubi-health)) |
 | `musubi search <query>` | Search + graph-expanded neighbors + quality badges ([confidence + staleness](#memory-quality-confidence--staleness)) |
 | `musubi benchmark` | Measure how many tokens musubi saves you ([details](#measure-your-token-savings)) |
 
@@ -208,6 +219,58 @@ Keyword search for "benchmark" would never return a devops debugging note.
 The ❄ marker flags isolated nodes (degree = 0). These docs don't share
 enough concepts with anything else — either they need richer vocabulary,
 or they're genuinely standalone topics.
+
+---
+
+## Orientation map: `musubi map`
+
+A graph visualization is fun to look at but hard to *act* on. The genuinely
+useful output of having a graph is a **one-page map an agent reads to grasp
+the whole corpus fast** — then drills into a specific note with `musubi
+neighbors` / `qmd get`. That's `musubi map`: every note, grouped, with a
+one-line "what it's about" pulled verbatim from the note's frontmatter
+`description` (or, when absent, its strongest extracted concepts).
+
+```bash
+musubi map                       # group by collection (default), print to stdout
+musubi map --by tag              # group by frontmatter tags
+musubi map --by concept          # group by dominant concept
+musubi map --out KB_MAP.md       # write a file (read it on demand, don't auto-load it)
+```
+
+```markdown
+## agents  (12)
+- **Tool Calling Patterns** ❄ — when the model emits malformed tool calls and how to recover
+- **Agent Memory** — file-based vs database-backed memory, and why files win for small fleets
+```
+
+`❄` marks isolated notes, `⚠` marks superseded ones. The map is for reading
+*on demand* — it's an orientation doc, not something to load every turn.
+
+## Health audit: `musubi health`
+
+What a knowledge graph is really *for*: surfacing structural rot you can fix.
+
+```bash
+musubi health
+```
+
+```
+◇ KB health — 1145 notes
+  link coverage: 1145/1145 (100%) connected to ≥1 other note
+
+① ORPHANS (no graph links — not woven in): 0
+② HUB CONCEPTS (in ≥229 notes — connect everything, low signal): 13
+    blog (436 notes), agent (380 notes), claude (378 notes), …
+③ DANGLING FILE REFS (note points at a path that no longer exists): 12
+    dgx-spark-deployment-guide → ~/models/qwen35-35b-hf
+```
+
+- **Orphans** — notes with zero graph links; not woven into the rest.
+- **Hub concepts** — concepts so common they connect everything and carry
+  little discriminative signal (candidates for splitting or stop-listing).
+- **Dangling file refs** — local filesystem paths a note points at that no
+  longer exist (web routes and ephemeral `/tmp` paths are ignored).
 
 ---
 
