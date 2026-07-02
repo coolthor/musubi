@@ -50,11 +50,11 @@ Musubi 透過共享概念 — `quantization`、`kv cache`、`vllm` — 把它們
 
 - 🧠 **概念提取** — 從每篇筆記抓技術名詞，確定性、不燒 LLM
 - 🔗 **加權概念圖** — 用「共享的想法」連結筆記(IDF 加權),不是文字相似度
-- 🗺 **Orientation map** — 一頁掌握整個知識庫,給 agent 或給人讀(`musubi map`)
+- 🗺 **Orientation map** — 給 agent 或人讀的 compact / 完整知識庫地圖（`musubi orient`, `musubi map`）
 - 🩺 **健康體檢** — 孤兒、連結覆蓋率、hub 概念雜訊、失效檔案連結(`musubi health`)
 - ❄️ **冷節點偵測** — 在筆記爛掉前,把失連/孤立的挑出來
 - 🔎 **混合搜尋** — keyword + 圖譜擴展 + 信心度與過時 badge
-- ⚡ **確定性 × 本地** — 圖譜就是一個 JSON、幾秒建好;不需 server、不需 API key
+- ⚡ **確定性 × 本地** — 圖譜就是一個 JSON、幾秒建好;不需 hosted service、不需 API key
 
 Musubi 掃描一個資料夾裡的 Markdown 檔案，從每篇文件中提取技術概念，
 建立一張加權的概念共現圖。結果是一個 JSON 圖譜，可以從命令列即時查詢：
@@ -66,12 +66,15 @@ Musubi 掃描一個資料夾裡的 Markdown 檔案，從每篇文件中提取技
 | `musubi stats` | 知識圖譜有多大？hub 節點是誰？ |
 | `musubi neighbors <doc>` | 哪些筆記跟這篇相關？ |
 | `musubi cold` | 哪些筆記已經冷掉、失去連結？ |
+| `musubi orient` | 給 agent 的 compact 知識庫總覽：安全的第一眼 |
 | `musubi map` | 給我一頁「整個知識庫的地圖」快速上手——給 agent 或給人讀（[說明](#orientation-map-musubi-map)） |
 | `musubi health` | 知識庫哪裡在爛？——孤兒、連結覆蓋率、hub 概念雜訊、失效檔案連結（[說明](#health-audit-musubi-health)） |
 | `musubi search <query>` | 搜尋 + 圖譜擴展 + 品質 badge（[信心度 + 過時偵測](#記憶品質信心度--過時偵測)） |
 | `musubi benchmark` | 測量 musubi 幫你省了多少 token |
+| `musubi mcp` | 給 agent 直接呼叫的 stdio MCP server |
 
-不需要 server。不需要資料庫。不需要 API key。只需要 Markdown 檔案和一個 CLI。
+不需要 hosted service。不需要資料庫。不需要 API key。
+只需要 Markdown 檔案、一個 CLI，以及可選的 stdio MCP server。
 
 <p align="center">
   <img src="assets/demo-graph.png" alt="Musubi 概念圖 — 連結的 hub vs 冷掉的孤兒節點" width="92%">
@@ -152,6 +155,7 @@ musubi build --source ~/my-notes/
 # 探索
 musubi stats                         # 圖譜概覽
 musubi neighbors "some-doc-slug"     # 這篇連到什麼？
+musubi orient                        # 給 agent 的 compact 知識庫地圖
 musubi cold --limit 20               # 什麼冷掉了？
 ```
 
@@ -175,11 +179,15 @@ Keyword search 搜 "benchmark" 永遠不會回傳一篇 devops debug 筆記。
 
 ---
 
-## Orientation map：`musubi map`
+## Orientation map：`musubi orient` / `musubi map`
 
 把圖譜畫出來很好看，但很難拿來「做事」。圖譜真正有用的產物，是一頁**讓 agent 快速掌握整個知識庫的地圖**——掃過去抓全貌，再用 `musubi neighbors` / `qmd get` 拉特定筆記。這就是 `musubi map`：每篇筆記、分組、配一行「這篇在講什麼」，內容直接取自筆記 frontmatter 的 `description`（沒有就退而取最強的幾個概念）。
 
+日常 agent 啟動先用 `musubi orient`，它只列每組代表性筆記。真的需要完整清單時，再用 `musubi map`。
+
 ```bash
+musubi orient                    # compact map，每組只列代表性筆記
+musubi orient --by concept       # 依主導概念分組
 musubi map                       # 預設按 collection 分組，印到 stdout
 musubi map --by tag              # 按 frontmatter tags 分組
 musubi map --by concept          # 按主導概念分組
@@ -192,7 +200,7 @@ musubi map --out KB_MAP.md       # 寫成檔案（需要時才讀，不要每 tu
 - **Agent Memory** — file-based vs database-backed，小 fleet 為何選檔案
 ```
 
-`❄` 標孤立筆記、`⚠` 標已被取代的。這份地圖是**需要時才讀**的 orientation 文件，不是每 turn 都載入的東西。
+`❄` 標孤立筆記、`⚠` 標已被取代的。完整 `map` 是**需要時才讀**的 orientation 文件；例行 agent 啟動用 `orient`。
 
 ## Health audit：`musubi health`
 
@@ -382,7 +390,7 @@ gb10
 
 ## 搭配 Claude Code 使用
 
-兩種整合層級 — 選適合你的：
+三種整合層級 — 選適合你的：
 
 ### 方法 A：自動 Hook（推薦）
 
@@ -451,10 +459,23 @@ chmod +x ~/.claude/hooks/musubi-presearch.sh
 3. 只搜尋外部真正新的東西。
 ```
 
-### 不需要 MCP server
+### 方法 C：給 agent 用的 MCP server
 
-兩種方法都透過 shell 運作。Claude Code 呼叫 `musubi` 跟呼叫 `grep` 或 `git`
-一樣。不需要 server process，不需要額外配置。
+如果你的 agent runtime 可以直接呼叫 MCP tools，讓 musubi 以 stdio MCP server 跑：
+
+```json
+{
+  "mcpServers": {
+    "musubi": {
+      "command": "musubi",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+目前 tools：`search`、`neighbors`、`cold`、`stats`、`orient`、`map`、`health`。
+如果是 Mission Control / worker 架構，優先用 MCP：agent 拿到結構化結果，不需要 parse terminal output。
 
 ---
 

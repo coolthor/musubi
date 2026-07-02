@@ -7,6 +7,9 @@ Tools:
   - neighbors: find docs related to a given doc
   - cold: list orphan/stale docs (archive candidates)
   - stats: graph summary
+  - orient: compact corpus orientation map for agents
+  - map: exhaustive corpus map (optionally truncated)
+  - health: knowledge-base health audit
 
 Launch via: `musubi mcp` (stdio transport for Claude Code).
 """
@@ -23,6 +26,8 @@ from mcp.types import TextContent, Tool
 
 from musubi.config import load_config
 from musubi.graph import Graph
+from musubi.mapgen import generate_map, generate_orient
+from musubi.search import DIRECT_KIND, expand_qmd_hits
 from musubi.staleness import compute_staleness
 
 
@@ -94,37 +99,25 @@ def _hybrid_search(query: str, limit: int = 10) -> dict[str, Any]:
     if not isinstance(hits, list):
         hits = hits.get("results", []) if isinstance(hits, dict) else []
 
-    base_ids: list[tuple[Any, float]] = []
-    for rank, hit in enumerate(hits[:limit]):
-        file_field = hit.get("file") or hit.get("path") or ""
-        nid = Graph.match_qmd_uri(file_field, g.path_to_id)
-        if nid is not None:
-            base_ids.append((nid, 1.0 / (rank + 1)))
-
-    expanded: dict[Any, float] = {}
-    for nid, base in base_ids:
-        expanded[nid] = expanded.get(nid, 0.0) + base
-        for nbr in g.neighbors_of(nid, limit=2):
-            nbr_id = nbr["id"]
-            boost = base * 0.3 * (nbr.get("weight", 1) / 10)
-            expanded[nbr_id] = expanded.get(nbr_id, 0.0) + boost
-
-    base_set = {nid for nid, _ in base_ids}
-    ranked = sorted(expanded.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    ranked, skipped = expand_qmd_hits(g, hits, query=query, limit=limit)
 
     results = []
-    for nid, score in ranked:
-        n = g.id_to_node.get(nid, {})
+    direct_count = 0
+    for hit in ranked:
+        n = g.id_to_node.get(hit.node_id, {})
+        if hit.kind == DIRECT_KIND:
+            direct_count += 1
         results.append({
             **_format_node(n),
-            "score": round(score, 4),
-            "kind": "direct" if nid in base_set else "neighbor",
+            "score": round(hit.score, 4),
+            "kind": hit.kind,
         })
 
     return {
         "query": query,
         "hits": results,
-        "summary": f"{len(base_set)} direct hits + {len(ranked) - len(base_set)} graph neighbors",
+        "skipped_qmd_hits": skipped,
+        "summary": f"{direct_count} direct hits + {len(ranked) - direct_count} graph neighbors",
     }
 
 
@@ -134,7 +127,7 @@ def _neighbors(query: str, limit: int = 10) -> dict[str, Any]:
     if err:
         return {"error": err, "neighbors": []}
 
-    nid = Graph.match_qmd_uri(query, g.path_to_id)
+    nid = Graph.match_qmd_uri(query, g.path_to_id, g.collection_path_to_id)
     if nid is None:
         # Try as title/partial match
         for path, node_id in g.path_to_id.items():
@@ -206,6 +199,76 @@ def _stats() -> dict[str, Any]:
     }
 
 
+def _orient(
+    by: str = "collection",
+    limit_per_group: int = 8,
+    max_groups: int = 20,
+) -> dict[str, Any]:
+    """Compact orientation map for agents."""
+    g, err = _load_graph()
+    if err:
+        return {"error": err}
+    return {
+        "format": "markdown",
+        "orient": generate_orient(
+            g,
+            by=by,
+            limit_per_group=limit_per_group,
+            max_groups=max_groups,
+        ),
+    }
+
+
+def _map(by: str = "collection", max_chars: int = 50_000) -> dict[str, Any]:
+    """Full map; truncate by default so MCP callers do not flood context."""
+    g, err = _load_graph()
+    if err:
+        return {"error": err}
+    text = generate_map(g, by=by)
+    truncated = len(text) > max_chars
+    if truncated:
+        text = text[:max_chars].rstrip() + "\n\n... truncated; call with a larger max_chars or use `orient`.\n"
+    return {
+        "format": "markdown",
+        "map": text,
+        "chars": len(text),
+        "truncated": truncated,
+    }
+
+
+def _health(limit: int = 40) -> dict[str, Any]:
+    """Knowledge-base health audit."""
+    from musubi import health
+
+    g, err = _load_graph()
+    if err:
+        return {"error": err}
+    findings = health.check(g)
+    return {
+        "summary": {
+            "total": findings["total"],
+            "connected": findings["connected"],
+            "coverage": findings["coverage"],
+            "orphan_count": len(findings["orphans"]),
+            "hub_count": len(findings["hubs"]),
+            "dangling_count": len(findings["dangling"]),
+            "duplicate_count": len(findings.get("duplicates") or []),
+        },
+        "hubs": findings["hubs"][:limit],
+        "suggested_stop_concepts": findings.get("suggested_stop_concepts", [])[:limit],
+        "dangling_by_kind": findings.get("dangling_by_kind", {}),
+        "dangling": findings["dangling"][:limit],
+        "duplicates": [
+            [
+                _format_node(node)
+                for node in group
+            ]
+            for group in (findings.get("duplicates") or [])[:limit]
+        ],
+        "orphans": [_format_node(node) for node in findings["orphans"][:limit]],
+    }
+
+
 def build_server() -> Server:
     server = Server("musubi")
 
@@ -261,6 +324,56 @@ def build_server() -> Server:
                 description="Graph summary: node count, edge count, per-collection breakdown.",
                 inputSchema={"type": "object", "properties": {}},
             ),
+            Tool(
+                name="orient",
+                description=(
+                    "Compact orientation map for agents. Use this first when you need a fast overview "
+                    "of the corpus without reading the exhaustive `map` output."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "by": {
+                            "type": "string",
+                            "enum": ["collection", "tag", "concept"],
+                            "default": "collection",
+                        },
+                        "limit_per_group": {"type": "integer", "default": 8},
+                        "max_groups": {"type": "integer", "default": 20},
+                    },
+                },
+            ),
+            Tool(
+                name="map",
+                description=(
+                    "Exhaustive markdown map of the corpus. Can be large; prefer `orient` unless "
+                    "you need every note."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "by": {
+                            "type": "string",
+                            "enum": ["collection", "tag", "concept"],
+                            "default": "collection",
+                        },
+                        "max_chars": {"type": "integer", "default": 50000},
+                    },
+                },
+            ),
+            Tool(
+                name="health",
+                description=(
+                    "Knowledge-base health audit: orphans, hub concepts, dangling file refs, "
+                    "and duplicate/mirrored notes."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "default": 40},
+                    },
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -273,6 +386,16 @@ def build_server() -> Server:
             result = _cold(arguments.get("limit", 20))
         elif name == "stats":
             result = _stats()
+        elif name == "orient":
+            result = _orient(
+                arguments.get("by", "collection"),
+                arguments.get("limit_per_group", 8),
+                arguments.get("max_groups", 20),
+            )
+        elif name == "map":
+            result = _map(arguments.get("by", "collection"), arguments.get("max_chars", 50_000))
+        elif name == "health":
+            result = _health(arguments.get("limit", 40))
         else:
             result = {"error": f"unknown tool: {name}"}
 

@@ -33,6 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from musubi import __version__
 from musubi.concepts import DEFAULT_PATH_CONCEPTS, load_concepts
 from musubi.config import Config
 
@@ -311,6 +312,8 @@ def _build_graph(docs, doc_concepts, hash_embeddings):
             "concepts": concepts,
             "concept_count": len(concepts),
         }
+        if doc.get("hash"):
+            node_attrs["hash"] = doc["hash"]
         # Confidence/staleness metadata — only included when present so
         # notes without these tags don't bloat the graph JSON.
         for key in ("confidence", "verified_by", "superseded_by", "description", "tags"):
@@ -552,7 +555,7 @@ def build(
     cfg.ensure_dirs()
     data = nx.node_link_data(G, edges="edges")
     data["graph"]["built_at"] = datetime.now(timezone.utc).isoformat()
-    data["graph"]["version"] = "musubi-0.2"
+    data["graph"]["version"] = f"musubi-{__version__}"
     data["graph"]["edge_weighting"] = "idf"
     data["graph"]["source"] = str(source) if source else "qmd"
     with cfg.graph_path.open("w") as f:

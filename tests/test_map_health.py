@@ -72,6 +72,16 @@ def test_map_concept_fallback_when_no_description(tmp_path, monkeypatch):
     assert "concepts:" in md or "the alpha orientation note" in md
 
 
+def test_orient_is_compact_and_grouped(tmp_path, monkeypatch):
+    from musubi.mapgen import generate_orient
+
+    g = _build(tmp_path, monkeypatch)
+    md = generate_orient(g, by="collection", limit_per_group=1, max_groups=2)
+    assert "# Knowledge-base orientation" in md
+    assert "## projects" in md
+    assert "... +1 more" in md
+
+
 def test_health_reports_coverage_and_dangling(tmp_path, monkeypatch):
     from musubi import health
 
@@ -83,5 +93,8 @@ def test_health_reports_coverage_and_dangling(tmp_path, monkeypatch):
     # gamma references a missing file -> must be flagged dangling
     dangling_refs = [ref for _, ref in f["dangling"]]
     assert any("musubi_missing_xyz_123" in r for r in dangling_refs)
+    assert f["dangling_by_kind"]["local-missing"] >= 1
+    assert "duplicates" in f
     report = health.format_report(f)
     assert "KB health" in report
+    assert "DUPLICATE / MIRRORED NOTES" in report

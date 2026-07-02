@@ -26,6 +26,7 @@ class Graph:
     edges: list[dict[str, Any]]
     id_to_node: dict[Any, dict[str, Any]]
     path_to_id: dict[str, Any]
+    collection_path_to_id: dict[str, Any]
     title_to_ids: dict[str, list[Any]]
     neighbors: dict[Any, list[dict[str, Any]]]
     degree: dict[Any, int]
@@ -52,12 +53,15 @@ class Graph:
 
         id_to_node: dict[Any, dict[str, Any]] = {}
         path_to_id: dict[str, Any] = {}
+        collection_path_to_id: dict[str, Any] = {}
         title_to_ids: dict[str, list[Any]] = defaultdict(list)
         for idx, n in enumerate(nodes):
             node_id = n.get("id", idx)
             id_to_node[node_id] = n
             if n.get("path"):
                 path_to_id[n["path"]] = node_id
+                if n.get("collection"):
+                    collection_path_to_id[f"{n['collection']}/{n['path']}"] = node_id
             if n.get("title"):
                 title_to_ids[n["title"]].append(node_id)
 
@@ -77,6 +81,7 @@ class Graph:
             edges=edges,
             id_to_node=id_to_node,
             path_to_id=path_to_id,
+            collection_path_to_id=collection_path_to_id,
             title_to_ids=dict(title_to_ids),
             neighbors=dict(neighbors),
             degree=dict(degree),
@@ -142,7 +147,11 @@ class Graph:
         return self.degree.get(node_id, 0)
 
     @staticmethod
-    def match_qmd_uri(file_field: str, path_to_id: dict[str, Any]) -> Any | None:
+    def match_qmd_uri(
+        file_field: str,
+        path_to_id: dict[str, Any],
+        collection_path_to_id: dict[str, Any] | None = None,
+    ) -> Any | None:
         """Map a qmd-style ``qmd://<collection>/<path>`` URI to a node id.
 
         Falls back to basename match only if the match is **unique**. If
@@ -151,8 +160,14 @@ class Graph:
         """
         import re
 
-        m = re.match(r"qmd://[^/]+/(.+)$", file_field)
-        rel = m.group(1) if m else file_field
+        m = re.match(r"qmd://([^/]+)/(.+)$", file_field)
+        if m and collection_path_to_id is not None:
+            coll, rel_path = m.group(1), m.group(2)
+            nid = collection_path_to_id.get(f"{coll}/{rel_path}")
+            if nid is not None:
+                return nid
+
+        rel = m.group(2) if m else file_field
 
         # 1. Exact relative-path match
         nid = path_to_id.get(rel)

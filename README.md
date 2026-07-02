@@ -51,11 +51,11 @@ connection surfaces automatically.
 
 - 🧠 **Concept extraction** — pulls technical terms from each note, deterministically, no LLM
 - 🔗 **Weighted concept graph** — links notes by *shared ideas* (IDF-weighted), not text similarity
-- 🗺 **Orientation map** — a one-page map of the whole corpus for an agent or a human (`musubi map`)
+- 🗺 **Orientation map** — compact or exhaustive corpus maps for an agent or a human (`musubi orient`, `musubi map`)
 - 🩺 **Health audit** — orphans, link coverage, hub-concept noise, dangling refs (`musubi health`)
 - ❄️ **Cold detection** — surfaces stale / disconnected notes before they rot
 - 🔎 **Hybrid search** — keyword + graph-expansion + confidence & staleness badges
-- ⚡ **Deterministic & local** — the graph is a JSON file built in seconds; no server, no API key
+- ⚡ **Deterministic & local** — the graph is a JSON file built in seconds; no hosted service, no API key
 
 Musubi scans a directory of markdown files, extracts technical concepts
 from each document, and builds a weighted graph of concept co-occurrence.
@@ -68,12 +68,15 @@ The result is a JSON graph you can query instantly from the command line:
 | `musubi stats` | "How big is my knowledge graph? What are the hubs?" |
 | `musubi neighbors <doc>` | "What other notes are related to this one?" |
 | `musubi cold` | "Which notes have gone stale and lost connections?" |
+| `musubi orient` | Compact corpus overview for agents — the safe first read before drilling in |
 | `musubi map` | "Give me a one-page map of the whole corpus to orient on" — for an agent or a human ([details](#orientation-map-musubi-map)) |
 | `musubi health` | "Where is the knowledge base rotting?" — orphans, coverage, hub-concept noise, dangling file refs ([details](#health-audit-musubi-health)) |
 | `musubi search <query>` | Search + graph-expanded neighbors + quality badges ([confidence + staleness](#memory-quality-confidence--staleness)) |
 | `musubi benchmark` | Measure how many tokens musubi saves you ([details](#measure-your-token-savings)) |
+| `musubi mcp` | stdio MCP server for agents that should call musubi directly |
 
-No servers. No databases. No API keys. Just markdown files and a CLI.
+No hosted services. No databases. No API keys. Just markdown files, a CLI,
+and an optional stdio MCP server for agent runtimes.
 
 <p align="center">
   <img src="assets/demo-graph.png" alt="Musubi concept graph — connected hubs vs cold/orphan notes" width="92%">
@@ -172,6 +175,7 @@ musubi build --source ~/my-notes/
 # Explore
 musubi stats                         # graph overview
 musubi neighbors "some-doc-slug"     # what's connected to this?
+musubi orient                        # compact corpus map for agents
 musubi cold --limit 20               # what's gone stale?
 ```
 
@@ -241,16 +245,19 @@ or they're genuinely standalone topics.
 
 ---
 
-## Orientation map: `musubi map`
+## Orientation map: `musubi orient` / `musubi map`
 
 A graph visualization is fun to look at but hard to *act* on. The genuinely
-useful output of having a graph is a **one-page map an agent reads to grasp
-the whole corpus fast** — then drills into a specific note with `musubi
-neighbors` / `qmd get`. That's `musubi map`: every note, grouped, with a
-one-line "what it's about" pulled verbatim from the note's frontmatter
-`description` (or, when absent, its strongest extracted concepts).
+useful output of having a graph is a **map an agent reads to grasp the whole
+corpus fast** — then drills into a specific note with `musubi neighbors` /
+`qmd get`.
+
+Use `musubi orient` for the compact, safe first read. Use `musubi map` when
+you need the exhaustive list of every note.
 
 ```bash
+musubi orient                    # compact map, representative notes per group
+musubi orient --by concept       # compact map by dominant concept
 musubi map                       # group by collection (default), print to stdout
 musubi map --by tag              # group by frontmatter tags
 musubi map --by concept          # group by dominant concept
@@ -263,8 +270,8 @@ musubi map --out KB_MAP.md       # write a file (read it on demand, don't auto-l
 - **Agent Memory** — file-based vs database-backed memory, and why files win for small fleets
 ```
 
-`❄` marks isolated notes, `⚠` marks superseded ones. The map is for reading
-*on demand* — it's an orientation doc, not something to load every turn.
+`❄` marks isolated notes, `⚠` marks superseded ones. The exhaustive map is
+for reading *on demand* — use `orient` for routine agent startup.
 
 ## Health audit: `musubi health`
 
@@ -715,7 +722,7 @@ model behavior. Run the benchmark on your own notes with
 
 ## Using with Claude Code
 
-Two integration levels — pick the one that fits:
+Three integration levels — pick the one that fits:
 
 ### Option A: Auto-hook (recommended)
 
@@ -789,11 +796,25 @@ If you don't want hooks, add this to your `CLAUDE.md` instead:
 This relies on Claude following instructions (usually works, but not
 guaranteed — Option A is foolproof).
 
-### No MCP server needed
+### Option C: MCP server for agents
 
-Both options work through the shell. Claude Code calls `musubi` the
-same way it calls `grep` or `git`. No server process, no configuration
-beyond the hook or CLAUDE.md text.
+For agent runtimes that can call MCP tools directly, run musubi as a stdio
+MCP server:
+
+```json
+{
+  "mcpServers": {
+    "musubi": {
+      "command": "musubi",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Exposed tools: `search`, `neighbors`, `cold`, `stats`, `orient`, `map`,
+and `health`. For a Mission Control / worker setup, prefer MCP: the agent
+gets structured results and does not need to parse terminal output.
 
 ---
 

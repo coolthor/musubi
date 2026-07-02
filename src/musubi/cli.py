@@ -6,6 +6,7 @@ Subcommands
   musubi neighbors <query>         show graph neighbors of a doc
   musubi cold [--limit N]          list isolated / stale docs
   musubi map [--by K] [--out F]    AI-orientation map of the whole corpus
+  musubi orient [--by K]           compact orientation map for agents
   musubi health [--limit N]        orphans / coverage / hub / dangling-ref audit
   musubi search <query>            hybrid qmd-keyword + graph-expand search
   musubi path <query>              resolve a query to node id + path (debug)
@@ -395,15 +396,14 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
     if not isinstance(hits, list):
         hits = hits.get("results", []) if isinstance(hits, dict) else []
 
-    base_ids: list[tuple[Any, float]] = []
-    skipped = 0
-    for rank, hit in enumerate(hits[: args.limit]):
-        file_field = hit.get("file") or hit.get("path") or ""
-        nid = Graph.match_qmd_uri(file_field, g.path_to_id)
-        if nid is None:
-            skipped += 1
-            continue
-        base_ids.append((nid, 1.0 / (rank + 1)))
+    from musubi.search import DIRECT_KIND, expand_qmd_hits
+
+    ranked, skipped = expand_qmd_hits(
+        g,
+        hits,
+        query=args.query,
+        limit=args.limit,
+    )
 
     if skipped:
         print(
@@ -411,15 +411,7 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
             file=sys.stderr,
         )
 
-    expanded: dict[Any, float] = {}
-    for nid, base in base_ids:
-        expanded[nid] = expanded.get(nid, 0.0) + base
-        for nbr in g.neighbors_of(nid, limit=2):
-            nbr_id = nbr["id"]
-            boost = base * 0.3 * (nbr.get("weight", 1) / 10)
-            expanded[nbr_id] = expanded.get(nbr_id, 0.0) + boost
-
-    if not expanded:
+    if not ranked:
         print(
             c(
                 "Graph expansion found no matches. Raw qmd results (first 5):",
@@ -429,15 +421,12 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
         print(json.dumps(hits[:5], indent=2, ensure_ascii=False))
         return 0
 
-    ranked = sorted(expanded.items(), key=lambda kv: kv[1], reverse=True)[: args.limit]
-    base_set = {nid for nid, _ in base_ids}
-
     print(c(f"◇ Musubi search: {args.query}", "cyan"))
     print()
-    for nid, score in ranked:
-        n = g.id_to_node.get(nid, {})
-        marker = c("★", "yellow") if nid in base_set else c("+", "green")
-        print(f"  {marker} {score:.3f}  {_node_label(n)}")
+    for hit in ranked:
+        n = g.id_to_node.get(hit.node_id, {})
+        marker = c("★", "yellow") if hit.kind == DIRECT_KIND else c("+", "green")
+        print(f"  {marker} {hit.score:.3f}  {_node_label(n)}")
     print()
     print(c("  ★ = direct hit    + = graph neighbor boost", "dim"))
     return 0
@@ -559,6 +548,20 @@ def cmd_map(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def cmd_orient(args: argparse.Namespace, cfg: Config) -> int:
+    from musubi.mapgen import generate_orient
+
+    g = _load_graph_or_exit(cfg)
+    md = generate_orient(
+        g,
+        by=args.by,
+        limit_per_group=args.limit_per_group,
+        max_groups=args.max_groups,
+    )
+    sys.stdout.write(md)
+    return 0
+
+
 def cmd_health(args: argparse.Namespace, cfg: Config) -> int:
     from musubi import health
 
@@ -598,6 +601,15 @@ def main(argv: list[str] | None = None) -> int:
                       help="how to group notes (default: collection)")
     pmap.add_argument("--out", metavar="FILE", help="write to FILE instead of stdout")
     pmap.set_defaults(func=cmd_map)
+
+    porient = sub.add_parser("orient", help="emit a compact AI-orientation map")
+    porient.add_argument("--by", choices=["collection", "tag", "concept"], default="collection",
+                         help="how to group notes (default: collection)")
+    porient.add_argument("--limit-per-group", type=int, default=8,
+                         help="max representative notes per group (default: 8)")
+    porient.add_argument("--max-groups", type=int, default=20,
+                         help="max groups to print (default: 20)")
+    porient.set_defaults(func=cmd_orient)
 
     phealth = sub.add_parser("health", help="orphans / coverage / hub-concept / dangling-ref audit")
     phealth.add_argument("--limit", type=int, default=40)
@@ -666,7 +678,7 @@ def _run_mcp() -> int:
         from musubi.mcp_server import run
     except ImportError as e:
         print(c(f"MCP server requires the 'mcp' package: {e}", "red"), file=sys.stderr)
-        print(c("Install with: pipx install mcp  (or) pip install mcp", "yellow"), file=sys.stderr)
+        print(c("Reinstall musubi so its MCP dependency is present.", "yellow"), file=sys.stderr)
         return 1
     return run()
 

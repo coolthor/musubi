@@ -10,8 +10,11 @@ Stdlib only — no ML imports, so `musubi map` is as cheap as `stats`.
 """
 from __future__ import annotations
 
+import os
 from collections import defaultdict
 from typing import Any
+
+from musubi.search import canonical_node_ids
 
 
 def _aboutness(node: dict[str, Any]) -> str:
@@ -35,6 +38,12 @@ def _group_key(node: dict[str, Any], by: str) -> list[str]:
         concepts = [c for c in node.get("concepts", []) if not c.startswith("h:")]
         return concepts[:1] or ["(no concept)"]
     return [node.get("collection", "?")]
+
+
+def _is_meta_doc(node: dict[str, Any]) -> bool:
+    basename = os.path.basename(node.get("path") or "").lower()
+    title = (node.get("title") or "").lower()
+    return basename in {"kb_map.md", "kb-map.md", "log.md", "memory.md"} or "kb_map" in title
 
 
 def generate_map(graph, by: str = "collection") -> str:
@@ -71,6 +80,64 @@ def generate_map(graph, by: str = "collection") -> str:
             path = node.get("path", "")
             loc = f"  `{path}`" if path else ""
             lines.append(f"- **{title}**{marks} — {_aboutness(node)}{loc}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def generate_orient(
+    graph,
+    by: str = "collection",
+    *,
+    limit_per_group: int = 8,
+    max_groups: int = 20,
+) -> str:
+    """Return a compact orientation map for agents.
+
+    Unlike ``generate_map``, this intentionally samples representative,
+    well-connected notes per group. It is safe to read at task start without
+    flooding the context window.
+    """
+    groups: dict[str, list[tuple[str, dict[str, Any], int]]] = defaultdict(list)
+    total = 0
+    for nid in canonical_node_ids(graph):
+        node = graph.id_to_node[nid]
+        total += 1
+        deg = graph.deg(nid)
+        for key in _group_key(node, by):
+            groups[key].append((node.get("title", "?"), node, deg))
+
+    ordered_groups = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0].lower()))
+    hidden_groups = max(0, len(ordered_groups) - max_groups)
+    ordered_groups = ordered_groups[:max_groups]
+
+    lines: list[str] = []
+    lines.append("# Knowledge-base orientation (musubi)")
+    lines.append("")
+    lines.append(
+        f"> Compact map from {total} canonical notes, grouped by `{by}`. "
+        f"Shows up to {limit_per_group} representative notes per group. "
+        "Use `musubi map` only when you need the exhaustive list."
+    )
+    lines.append("")
+
+    for key, items in ordered_groups:
+        sorted_items = sorted(
+            items,
+            key=lambda x: (_is_meta_doc(x[1]), -x[2], x[0].lower()),
+        )
+        hidden_items = max(0, len(sorted_items) - limit_per_group)
+        lines.append(f"## {key}  ({len(sorted_items)})")
+        for title, node, deg in sorted_items[:limit_per_group]:
+            path = node.get("path", "")
+            loc = f"  `{path}`" if path else ""
+            lines.append(f"- **{title}** — {_aboutness(node)}{loc}  _(deg {deg})_")
+        if hidden_items:
+            lines.append(f"- ... +{hidden_items} more")
+        lines.append("")
+
+    if hidden_groups:
+        lines.append(f"_... +{hidden_groups} more groups hidden. Increase `--max-groups` to show them._")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"

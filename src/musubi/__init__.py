@@ -1,3 +1,3 @@
 """Musubi — a knowledge-graph companion for flat-file markdown note systems."""
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
